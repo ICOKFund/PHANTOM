@@ -2,7 +2,9 @@
 // 정적 사이트: data/index.json(검색 색인), data/meta.json(등급 기준), data/firms/{종목코드}.json(기업 상세)
 
 const app = document.getElementById('app');
-const S = { index: [], byCode: new Map(), meta: null, firms: new Map(), cur: null, lastFirm: null };
+// 오류 신고·공지 저장소(Google Apps Script 웹 앱, apps-script/Code.gs). 비어 있으면 신고 버튼과 공지를 숨긴다.
+const API = 'https://script.google.com/macros/s/AKfycby-yi_wFnmS353NlVlcCkMOzWvNzYjLLzih7q4a-MD-oyh9f3gWRO8dgepgRhtVIvd67A/exec';
+const S = { index: [], byCode: new Map(), meta: null, firms: new Map(), cur: null, lastFirm: null, seq: 0 };
 const EXAMPLES = ['005710', '243070', '065450', '261200', '001810', '134780'];
 const GRADES = ['1', '2', '3', '4', '5', '6'];
 const GNAME = { 1: '매우 낮음', 2: '낮음', 3: '보통', 4: '주의', 5: '경계', 6: '위험', D: '한계기업' };
@@ -160,7 +162,10 @@ const topBar = (active = '') => `<header class="top"><div class="top-in">
   <a class="top-link" href="#/about"${active === 'about' ? ' aria-current="page"' : ''}>모형 안내</a>
 </div></header>`;
 
-const footNote = () => `<footer class="foot">PHANTOM은 광운대학교 참빛설계학기 연구 모형의 추정치를 보여 줍니다. ${S.meta.asof}년 결산 공시까지의 자료를 썼고, 투자 권유나 신용평가가 아닙니다. 모형의 계수는 함께 나타나는 경향(연관)을 뜻할 뿐 원인을 뜻하지 않습니다.</footer>`;
+const reportBtn = () => (API ? '<button type="button" class="linkish" data-report>오류 신고</button>' : '');
+const footNote = () => `<footer class="foot"><p>PHANTOM은 광운대학교 참빛설계학기 연구 모형의 추정치를 보여 줍니다. 등급은 ${S.meta.asof}년 결산 공시로 계산했고, 실제 결과는 ${S.meta.asof_outcome}년 결산까지, 상장 상태는 ${F.date(S.meta.asof_status)} 기준으로 확인했습니다. 투자 권유나 신용평가가 아닙니다. 모형의 계수는 함께 나타나는 경향(연관)을 뜻할 뿐 원인을 뜻하지 않습니다.</p>
+  <p class="foot-links"><a href="#/about">모형 안내</a>${reportBtn()}</p></footer>`;
+const disclaim = () => `<p class="disclaim">연구 모형의 추정치이며 투자 권유나 신용평가가 아닙니다. <a href="#/about">계산 방법 보기</a>${reportBtn()}</p>`;
 
 // ------------------------------------------------------------------ 첫 화면
 function renderHome() {
@@ -168,7 +173,7 @@ function renderHome() {
   const ex = EXAMPLES.map((c) => S.byCode.get(c)).filter(Boolean)
     .map((r) => `<a class="ex" href="#/firm/${r.c}"><i class="dot ${gc(r.g)}"></i>${esc(r.n)}</a>`).join('');
   app.innerHTML = `<div class="home">
-    <nav class="home-nav" aria-label="보조"><a href="#/about">모형 안내</a></nav>
+    <nav class="home-nav" aria-label="보조"><a href="#/about">모형 안내</a>${reportBtn()}</nav>
     <main class="home-main">
       <h1 class="wordmark" aria-label="PHANTOM">${[...'PHANTOM'].map((c, i) => `<span aria-hidden="true" style="animation-delay:${i * 80}ms">${c}</span>`).join('')}</h1>
       <p class="tagline">코스닥 제조업 기업이 3년 안에 한계기업이 될 위험을 조회합니다</p>
@@ -182,22 +187,39 @@ function renderHome() {
 }
 
 // ------------------------------------------------------------------ 기업 화면
-async function renderFirm(code, tab) {
+async function renderFirm(code, tab, seq) {
   const r = S.byCode.get(code);
   if (!r) return renderMissing(code);
-  let f = null;
-  if (r.d) {
+  document.title = `${r.n} | PHANTOM`;
+  let f = S.firms.get(code);
+  if (!f) {
+    // 0.15초 넘게 걸리면 불러오는 중임을 보여 준다. 그사이 다른 화면으로 옮겼으면(seq가 바뀜) 늦게 온 응답은 버린다.
+    const wait = setTimeout(() => {
+      if (seq === S.seq) app.innerHTML = `${topBar()}<main class="page">${firmHead(r, null)}<p class="loading" role="status">불러오는 중…</p></main>`;
+    }, 150);
     try {
-      f = S.firms.get(code) || await getJSON(`data/firms/${code}.json`);
+      f = await getJSON(`data/firms/${code}.json`);
       S.firms.set(code, f);
-    } catch (e) { f = null; }
+    } catch (e) {
+      f = null;
+    } finally {
+      clearTimeout(wait);
+    }
+    if (seq !== S.seq) return;
   }
   S.cur = f;
-  document.title = `${r.n} | PHANTOM`;
-  const body = f ? RENDER[tab](f) : pendingBody(r);
-  app.innerHTML = `${topBar()}<main class="page">${firmHead(r, f)}${f ? tabsNav(code, tab) : ''}<div class="tab-body">${body}</div>${footNote()}</main>`;
+  if (!f) {
+    app.innerHTML = `${topBar()}<main class="page">${firmHead(r, null)}<div class="notice" role="alert">자료를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.
+      <button type="button" class="btn-sm" data-retry>다시 시도</button></div>${footNote()}</main>`;
+    app.querySelector('[data-retry]').addEventListener('click', route);
+    bindSearch(app.querySelector('[data-search]'));
+    S.lastFirm = null;
+    return;
+  }
+  app.innerHTML = `${topBar()}<main class="page">${firmHead(r, f)}${tabsNav(code, tab)}<div class="tab-body">${RENDER[tab](f)}</div>${footNote()}</main>`;
   bindSearch(app.querySelector('[data-search]'));
   drawCharts();
+  fitScrollers();
   if (S.lastFirm !== code) window.scrollTo(0, 0);
   else {
     const t = app.querySelector('.tabs');
@@ -217,6 +239,27 @@ function firmHead(r, f) {
 }
 const tabsNav = (code, tab) => `<nav class="tabs" aria-label="상세 화면">${TABS.map(([id, label]) =>
   `<a href="#/firm/${code}${id === 'overview' ? '' : '/' + id}"${id === tab ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`;
+
+// 가로로 넘치는 탭 줄과 표: 현재 탭을 가운데로, 자금조달 표는 최근 연도가 보이게, 오른쪽에 더 있으면 끝을 흐리게
+function fitScrollers() {
+  const tabs = app.querySelector('.tabs');
+  const cur = tabs && tabs.querySelector('[aria-current]');
+  if (cur && tabs.scrollWidth > tabs.clientWidth) {
+    tabs.scrollLeft += cur.getBoundingClientRect().left - tabs.getBoundingClientRect().left - (tabs.clientWidth - cur.offsetWidth) / 2;
+  }
+  for (const t of app.querySelectorAll('.mx')) {
+    const sc = t.closest('.scroll');
+    if (sc) sc.scrollLeft = sc.scrollWidth;
+  }
+  for (const el of app.querySelectorAll('.tabs, .scroll')) {
+    const mark = () => el.classList.toggle('more-r', el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+    if (!el.dataset.fit) {
+      el.addEventListener('scroll', mark, { passive: true });
+      el.dataset.fit = '1';
+    }
+    mark();
+  }
+}
 
 // ---------- 판정 구역
 function ramp(cur) {
@@ -286,6 +329,12 @@ function displayItems(f) {
     if (it.key === '메자닌발행' && it.value === 1 && fy.mezz_n) {
       row.sub = `${fy.mezz_n}건${fy.mezz_ratio ? `, 자산의 ${F.pct(fy.mezz_ratio)}` : ''}`;
     }
+    if (it.clipped) {
+      // 패널 값이 표본 1%·99% 경계에 걸린 항목: 모형에는 경계값이 들어갔고, 실제 값은 그 밖일 수 있다.
+      const hi = it.clipped === 'hi';
+      const clip = `${hi ? '상한' : '하한'}값 적용, ${it.actual ? `실제 ${it.actual}` : `실제는 이보다 ${hi ? '클' : '작을'} 수 있음`}`;
+      row.sub = row.sub ? `${row.sub}, ${clip}` : clip;
+    }
     rows.push(row);
   }
   return rows;
@@ -312,23 +361,35 @@ function valText(it) {
 function posCell(r) {
   if (!r.posKind || !r.pos) return '<span class="muted">—</span>';
   const title = r.posKind === 'state'
-    ? `좋음부터 무차입, ICR 3 이상, 1~3, 1 미만 1년째, 1 미만 2년 연속 순서 중 ${r.pos}번째`
+    ? `위험이 낮은 쪽부터 무차입, ICR 3 이상, 1~3, 1 미만 1년째, 1 미만 2년 연속 순서 중 ${r.pos}번째`
     : `같은 해 분포에서 아래부터 ${Math.round(r.pct * 100)}% 지점`;
-  return `<span class="pos" title="${esc(title)}" role="img" aria-label="${esc(`5칸 중 ${r.pos}번째, 1칸이 가장 좋음`)}">${[1, 2, 3, 4, 5].map((i) => `<i${i === r.pos ? ' class="on"' : ''}></i>`).join('')}</span>`;
+  return `<span class="pos" title="${esc(title)}" role="img" aria-label="${esc(`5칸 중 ${r.pos}번째, 1칸이 위험이 가장 낮은 쪽`)}">${[1, 2, 3, 4, 5].map((i) => `<i${i === r.pos ? ' class="on"' : ''}></i>`).join('')}</span>`;
 }
 
 // ---------- 탭: 개요
 function overview(f) {
   const e = f.eval;
   const note = e.note ? `<p class="note">${esc(e.note)}</p>` : '';
-  if (e.grade === 'D') return verdictD(e, e.icr_years) + note + stripBlock(f);
-  if (!GNAME[e.grade]) return verdictNA(e.year) + note + stripBlock(f);
-  return verdict(e.grade, e.score, e.pd, e.year) + calib(e) + note
+  const head = disclaim() + afterNotice(f);
+  if (e.grade === 'D') return verdictD(e, e.icr_years) + head + note + stripBlock(f);
+  if (!GNAME[e.grade]) return verdictNA(e.year) + head + note + stripBlock(f);
+  return verdict(e.grade, e.score, e.pd, e.year) + head + calib(e) + note
     + `<section class="block"><h2>단계별 결과</h2><p class="lede">기업 내부 정보만 쓴 식에서 시작해 정책금융과 메자닌 정보를 차례로 더한 결과입니다. 마지막 줄이 최종 판정입니다.</p>${stagesTable(e)}</section>`
     + `<section class="block"><h2>점수 구성</h2><p class="lede">같은 업종의 평균적인 기업에서 출발해, 영역마다 이 기업이 평균과 다른 만큼 점수가 오르내립니다. 점수가 40점 오르면 진입 오즈가 두 배가 됩니다.</p>
         <div class="chart" data-chart="waterfall"></div>
-        <div class="legend"><span><i style="background:var(--up)"></i>위험을 올림</span><span><i style="background:var(--down)"></i>위험을 낮춤</span><span><i style="background:repeating-linear-gradient(45deg,var(--ink-3) 0 2px,#fff 2px 5px);outline:1px solid var(--ink-3)"></i>통계적으로 유의하지 않음</span></div></section>`
+        <div class="legend"><span><i style="background:var(--up)"></i>점수를 올림</span><span><i style="background:var(--down)"></i>점수를 낮춤</span><span><i style="background:repeating-linear-gradient(45deg,var(--ink-3) 0 2px,#fff 2px 5px);outline:1px solid var(--ink-3)"></i>통계적으로 유의하지 않음</span><span><svg width="14" height="12" aria-hidden="true"><path d="M7 0v12" stroke="#cfcddd" stroke-width="1.5" stroke-dasharray="3 3"/></svg>등급 경계(3|4는 3등급과 4등급 사이)</span></div></section>`
     + moversBlock(f) + stripBlock(f);
+}
+
+// 평가 뒤에 상장폐지된 기업: 모형은 3년 안의 부실 사유 상장폐지도 한계기업 진입과 같은 결과로 본다.
+function afterNotice(f) {
+  const a = f.eval.after;
+  if (!a) return '';
+  const why = shortReason(f.status.reason);
+  const head = `이 기업은 평가 뒤인 ${F.date(a.date)}에 상장폐지되었습니다${why ? `(${esc(why)})` : ''}.`;
+  return a.kind === 'distress'
+    ? `<p class="notice">${head} 모형은 3년 안의 부실 사유 상장폐지도 한계기업 진입과 같은 결과로 보므로, 이 평가의 실제 결과는 ‘진입’입니다. 위 등급은 ${f.eval.year}년 결산 시점의 추정치입니다.</p>`
+    : `<p class="notice">${head} 부실 사유의 상장폐지가 아니어서 3년 안 결과는 판정하지 않습니다.</p>`;
 }
 
 function moversBlock(f) {
@@ -337,8 +398,10 @@ function moversBlock(f) {
   const downs = rows.filter((r) => r.pts <= -0.05).sort((a, b) => a.pts - b.pts).slice(0, 3);
   const li = (r) => `<li><div>${esc(r.label)}<span>${esc(r.value)}${r.sub ? `, ${esc(r.sub)}` : ''}</span></div><div class="${r.pts > 0 ? 'up' : 'down'}">${F.pts(r.pts)}점</div></li>`;
   const col = (title, arr) => `<div><h3>${title}</h3><ol>${arr.length ? arr.map(li).join('') : '<li><div class="muted">해당 항목 없음</div></li>'}</ol></div>`;
-  return `<section class="block"><h2>점수를 크게 움직인 항목</h2><p class="lede">같은 업종 평균 기업과 비교해 점수를 가장 많이 올리거나 낮춘 항목입니다. 5% 수준에서 통계적으로 유의한 항목만 골랐습니다.</p>
-    <div class="movers">${col('위험을 올린 항목', ups)}${col('위험을 낮춘 항목', downs)}</div></section>`;
+  const debt = [...ups, ...downs].some((r) => r.key === '부채비율변화')
+    ? ' 부채비율 변화는 부채비율 수준을 함께 넣은 식의 계수라, 수준이 같은 기업끼리 비교한 연관입니다. 그래서 부채비율이 늘었는데 점수가 낮아질 수 있습니다.' : '';
+  return `<section class="block"><h2>점수를 크게 움직인 항목</h2><p class="lede">같은 업종 평균 기업과 비교해 점수를 가장 많이 올리거나 낮춘 항목입니다. 5% 수준에서 통계적으로 유의한 항목만 골랐습니다. 점수는 다른 항목이 같을 때 함께 나타나는 경향(연관)이며, 그 항목이 위험의 원인이라는 뜻은 아닙니다.${debt}</p>
+    <div class="movers">${col('점수를 올린 항목', ups)}${col('점수를 낮춘 항목', downs)}</div></section>`;
 }
 
 function stripBlock(f) {
@@ -363,9 +426,10 @@ function credit(f) {
   const s2 = `<section class="block"><h2>2. 위험도 등급 결과</h2>${graded
     ? `<p class="lede">재무 기준 ${e.year}년 결산, 평가 대상 기간 ${e.year + 1}~${e.year + 3}년</p>${stagesTable(e)}`
     : `<p class="lede">${e.grade === 'D' ? `${e.year}년 결산 기준으로 이미 한계기업(D)이라 진입 확률을 계산하지 않습니다.` : '이자상환 상태를 정할 자료가 없어 판정하지 않았습니다.'}</p>`}</section>`;
-  const s3 = `<section class="block"><h2>3. 항목별 상세</h2><p class="lede">위험도 점수식에 들어가는 항목만 보여 줍니다. 같은 해 위치는 그해 아직 한계기업이 아닌 코스닥 제조업 기업 사이에서 이 기업이 놓인 5분위이고, 좋고 나쁨의 방향은 모형 계수의 부호를 따릅니다.</p>
+  const s3 = `<section class="block"><h2>3. 항목별 상세</h2><p class="lede">위험도 점수식에 들어가는 항목만 보여 줍니다. 같은 해 위치는 그해 아직 한계기업이 아닌 코스닥 제조업 기업 사이에서 이 기업이 놓인 5분위입니다. 막대는 왼쪽일수록 모형에서 위험이 낮은 쪽이며, 방향은 모형 계수의 부호를 따릅니다.</p>
+    ${e.input_note ? `<p class="note">${esc(e.input_note)}</p>` : ''}
     ${itemTable(f, graded)}
-    <p class="note">${graded ? '점수 기여 = 57.71 × 계수 × (이 기업 값 − 표본 평균). 정책금융 세 유형과 메자닌은 해당 여부로 계산합니다. ' : ''}표본의 1%·99% 경계를 넘는 값은 경계값으로 계산합니다(†). 흐린 줄은 5% 수준에서 통계적으로 유의하지 않은 항목입니다.</p></section>`;
+    <p class="note">${graded ? '점수 기여 = 57.71 × 계수 × (이 기업 값 − 표본 평균). 정책금융 세 유형과 메자닌은 해당 여부로 계산합니다. ' : ''}†는 값이 표본의 1%·99% 경계에 걸려 모형에 경계값을 넣은 항목이며, 실제 값은 그보다 크거나 작을 수 있습니다. 흐린 줄은 5% 수준에서 통계적으로 유의하지 않은 항목입니다.</p></section>`;
   return s1 + s2 + s3;
 }
 
@@ -381,15 +445,15 @@ function itemTable(f, graded) {
     body += `<tr class="dom"><th colspan="${graded ? 4 : cols}">${d}${d === '정책금융' ? ' <span class="ns-tag">세 유형을 함께 봐도 유의하지 않음</span>' : ''}</th>${graded ? `<th class="r">${multi ? `소계 ${F.pts(domPts[d])}` : ''}</th>` : ''}</tr>`;
     for (const r of rs) {
       const cls = r.pts > 0.05 ? 'up' : r.pts < -0.05 ? 'down' : '';
-      body += `<tr${r.sig ? '' : ' class="ns"'}><td class="grp">${esc(r.group)}</td>
-        <td>${esc(r.label)}${r.sig ? '' : '<span class="ns-tag">유의하지 않음</span>'}</td>
-        <td class="r">${esc(r.value)}${r.clipped != null ? '<sup title="모형에는 표본 경계값을 넣었습니다">†</sup>' : ''}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</td>
-        <td>${posCell(r)}</td>${graded ? `<td class="r ${cls}">${F.pts(r.pts)}</td>` : ''}</tr>`;
+      body += `<tr${r.sig ? '' : ' class="ns"'}><td class="grp c-grp">${esc(r.group)}</td>
+        <td class="c-lab">${esc(r.label)}${r.sig ? '' : '<span class="ns-tag">유의하지 않음</span>'}</td>
+        <td class="r c-val">${esc(r.value)}${r.clipped ? '<sup title="모형에는 표본 경계값을 넣었습니다">†</sup>' : ''}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</td>
+        <td class="c-pos">${posCell(r)}</td>${graded ? `<td class="r c-pts ${cls}">${F.pts(r.pts)}</td>` : ''}</tr>`;
     }
   }
   if (graded) body += `<tr class="total"><td colspan="4">위험도 점수</td><td class="r">${F.score(e.score)}</td></tr>`;
   return `<div class="scroll"><table class="t items"><thead><tr><th>구분</th><th>평가항목</th><th class="r">업체값</th>
-    <th><span class="pos-head" aria-label="같은 해 위치, 왼쪽이 좋음"><span>좋음</span><span>나쁨</span></span></th>${graded ? '<th class="r">점수 기여</th>' : ''}</tr></thead><tbody>${body}</tbody></table></div>`;
+    <th><span class="pos-head" aria-label="같은 해 위치, 왼쪽이 위험 낮은 쪽"><span>위험 낮음</span><span>위험 높음</span></span></th>${graded ? '<th class="r">점수 기여</th>' : ''}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 // ---------- 탭: 요약재무제표
@@ -417,6 +481,7 @@ function fin(f) {
 // ---------- 탭: 위험도 추이
 function outcomeText(h) {
   if (h.y3 === 1) return '진입';
+  if (h.ev === 'delist') return '진입(부실 사유 상장폐지)';
   if (h.y3 === 0) return '진입 안 함';
   if (h.g === 'D') return '이미 한계기업';
   if (h.y > 2022) return '아직 확정 전';
@@ -448,20 +513,10 @@ function fundingTab(f) {
     ${row('발행액÷자산', (x) => (x.mezz_ratio ? F.pct(x.mezz_ratio) : dot(x.mezz)))}
     ${row('리픽싱 조건', (x) => dot(x.refix), '2020년 공시부터 기록')}
     </tbody></table></div>
-    <p class="note">● 있음, · 없음, – 기록 없음. 연구 결과에서 재무 상태가 같다면 정책금융 보유는 한계기업 진입과 뚜렷한 연관이 없었고(세 유형 결합 p = 0.46), 메자닌을 발행한 해에는 3년 안 진입 오즈가 1.82배 높았습니다.</p></section>`;
+    <p class="note">● 있음, · 없음, – 기록 없음. 연구 결과에서 재무 상태가 같다면 정책금융 보유는 한계기업 진입과 뚜렷한 연관이 없었고(세 유형 결합 p = 0.46), 메자닌을 발행한 해에는 3년 안 진입 오즈가 약 1.8배 높았습니다.</p></section>`;
 }
 
 const RENDER = { overview, credit, fin, history: historyTab, funding: fundingTab };
-
-// ---------- 상세가 아직 없는 기업
-function pendingBody(r) {
-  let top = '';
-  if (r.g === 'D') top = verdictD(null, null);
-  else if (GNAME[r.g] && r.pd != null) top = verdict(r.g, scoreOf(r.pd), r.pd, r.y);
-  else top = verdictNA(r.y);
-  const ex = EXAMPLES.map((c) => S.byCode.get(c)).filter(Boolean).map((x) => `<a href="#/firm/${x.c}">${esc(x.n)}</a>`).join(', ');
-  return `${top}<p class="notice">이 기업의 신용위험평가표·요약재무제표 같은 상세 화면은 아직 만들지 않았습니다. 지금은 예시 기업(${ex})만 상세 화면을 볼 수 있습니다.</p>`;
-}
 
 function renderMissing(code) {
   document.title = 'PHANTOM';
@@ -503,8 +558,8 @@ function renderAbout() {
     </dl></section>
     <section class="block"><h2>읽을 때 주의할 점</h2><div class="prose">
       <p>등급은 3년 안 진입 위험의 순서를 매기는 도구이며, 개별 기업의 부실을 확정하지 않습니다. 계수는 함께 나타나는 경향을 뜻할 뿐 원인을 뜻하지 않습니다.</p>
-      <p>재무 상태를 통제하면 정책금융 보유는 진입과 뚜렷한 연관이 없었습니다(세 유형 결합 p = 0.46). 메자닌 발행은 재무가 같아도 진입 오즈를 1.82배 높였습니다. 그래도 표본 밖 예측력은 이자상환 상태와 재무 변수가 대부분을 설명합니다.</p>
-      <p>정책금융은 받고 있었는지만 관찰했고, 새로 받은 시점과 금액은 반영하지 않았습니다. 화면의 값은 ${S.meta.asof}년 결산까지의 공시 자료이므로 그 뒤의 변화는 들어 있지 않습니다.</p>
+      <p>재무 상태를 통제하면 정책금융 보유는 진입과 뚜렷한 연관이 없었습니다(세 유형 결합 p = 0.46). 메자닌을 발행한 해에는 재무 상태가 같아도 3년 안 진입 오즈가 약 1.8배 높았습니다. 그래도 표본 밖 예측력은 이자상환 상태와 재무 변수가 대부분을 설명합니다.</p>
+      <p>정책금융은 받고 있었는지만 관찰했고, 새로 받은 시점과 금액은 반영하지 않았습니다. 등급은 ${S.meta.asof}년 결산 공시로 계산한 추정치입니다. 실제 결과는 ${S.meta.asof_outcome}년 결산까지, 상장 상태는 ${F.date(S.meta.asof_status)} 기준으로 확인했고, 평가 뒤에 상장폐지된 기업은 기업 화면에 따로 알립니다.</p>
     </div></section>
     <section class="block"><h2>만든 곳</h2><p class="lede">광운대학교 참빛설계학기 연구팀, 2026년 11월</p></section>
     ${footNote()}</main>`;
@@ -527,7 +582,6 @@ function drawWaterfall(el, e) {
   const narrow = W < 560;
   const L = narrow ? 104 : 176;
   const R = narrow ? 50 : 64;
-  const top = 34;
   const rowH = narrow ? 36 : 40;
   const rows = [{ label: narrow ? '업종 평균' : '같은 업종 평균 기업', type: 'base', v: e.base_score }];
   let cur = e.base_score;
@@ -541,18 +595,28 @@ function drawWaterfall(el, e) {
   let hi = Math.max(...vals);
   const pad = Math.max(hi - lo, 30) * 0.12;
   lo -= pad; hi += pad;
-  const H = top + rows.length * rowH + 4;
   const X = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
-  const desc = rows.map((r) => `${r.label} ${r.type === 'delta' ? F.pts(r.v) : F.score(r.v)}`).join(', ');
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc('점수 구성: ' + desc)}">
-    <defs><pattern id="hatchW" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#fff"/><rect width="1.8" height="5" fill="#6e6c86"/></pattern></defs>`;
+  // 등급 경계 이름: 앞 이름과 겹치면 한 줄 위로 올리고, 그래도 겹치면 생략한다. 좁은 화면은 '3|4'처럼 줄여 쓴다.
+  const labW = narrow ? 26 : 74;
+  const lastX = [-Infinity, -Infinity];
+  const marks = [];
   S.meta.cuts.forEach((c, i) => {
     const v = scoreOf(c);
     if (v <= lo || v >= hi) return;
     const x = X(v);
-    s += `<line x1="${x}" x2="${x}" y1="${top - 10}" y2="${H - 2}" stroke="#cfcddd" stroke-dasharray="3 4"/>
-      <text x="${x}" y="${top - 16}" text-anchor="middle">${i + 1}·${i + 2}등급 경계</text>`;
+    const row = x - lastX[0] >= labW ? 0 : x - lastX[1] >= labW ? 1 : -1;
+    if (row >= 0) lastX[row] = x;
+    marks.push({ x, i, row });
   });
+  const top = marks.some((m) => m.row === 1) ? 48 : 34;
+  const H = top + rows.length * rowH + 4;
+  const desc = rows.map((r) => `${r.label} ${r.type === 'delta' ? F.pts(r.v) : F.score(r.v)}`).join(', ');
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc('점수 구성: ' + desc)}">
+    <defs><pattern id="hatchW" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#fff"/><rect width="1.8" height="5" fill="#6e6c86"/></pattern></defs>`;
+  for (const m of marks) {
+    s += `<line x1="${m.x}" x2="${m.x}" y1="${top - 10}" y2="${H - 2}" stroke="#cfcddd" stroke-dasharray="3 4"/>`;
+    if (m.row >= 0) s += `<text x="${m.x}" y="${top - 16 - m.row * 14}" text-anchor="middle">${narrow ? `${m.i + 1}|${m.i + 2}` : `${m.i + 1}·${m.i + 2}등급 경계`}</text>`;
+  }
   rows.forEach((r, i) => {
     const y = top + i * rowH + rowH / 2;
     s += `<text class="${r.type === 'final' ? 'lab-b' : 'lab'}" x="0" y="${y + 4.5}">${esc(r.label)}</text>`;
@@ -634,7 +698,7 @@ function drawHistory(el, f) {
   s += `<text x="${ml - 8}" y="${oy + 4}" text-anchor="end">${narrow ? '결과' : '3년 안'}</text>`;
   hs.forEach((h) => {
     const x = X(h.y);
-    if (h.y3 === 1) s += `<circle cx="${x}" cy="${oy}" r="4.5" fill="#1b1930"/>`;
+    if (h.y3 === 1 || h.ev === 'delist') s += `<circle cx="${x}" cy="${oy}" r="4.5" fill="#1b1930"/>`;
     else if (h.y3 === 0) s += `<circle cx="${x}" cy="${oy}" r="4" fill="none" stroke="#6e6c86" stroke-width="1.5"/>`;
   });
   hs.forEach((h, i) => {
@@ -674,11 +738,126 @@ async function getJSON(p) {
 }
 
 function route() {
+  const seq = ++S.seq;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  if (parts[0] === 'firm' && parts[1]) return renderFirm(parts[1], TABS.some((t) => t[0] === parts[2]) ? parts[2] : 'overview');
+  if (parts[0] === 'firm' && parts[1]) return renderFirm(parts[1], TABS.some((t) => t[0] === parts[2]) ? parts[2] : 'overview', seq);
   if (parts[0] === 'about') return renderAbout();
   S.lastFirm = null;
+  if (parts[0] === 'admin') return renderAdmin(parts[1], seq);
   return renderHome();
+}
+
+// 관리자 화면은 따로 불러온다(방문자에게는 받지 않게).
+async function renderAdmin(view, seq) {
+  document.title = '관리자 | PHANTOM';
+  let m;
+  try {
+    m = await import('./admin.js');
+  } catch (e) {
+    if (seq === S.seq) app.innerHTML = `<main class="page"><p class="notice">관리자 화면을 불러오지 못했습니다. 새로고침해 주세요.</p></main>`;
+    return;
+  }
+  if (seq !== S.seq) return;
+  m.render(view, { app, S, API, api, esc, F, chip, gLabel, GNAME, topBar, footNote, bindSearch, isLive: () => seq === S.seq });
+}
+
+// ------------------------------------------------------------------ 신고·공지(Apps Script)
+// 본문을 문자열로 보내면 text/plain이 되어 사전 요청(preflight) 없이 다른 도메인으로 보낼 수 있다.
+async function api(body) {
+  const r = await fetch(API, { method: 'POST', body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+const store = {
+  get: (k, s = localStorage) => { try { return s.getItem(k); } catch (e) { return null; } },
+  set: (k, v, s = localStorage) => { try { s.setItem(k, v); } catch (e) { /* 저장소를 못 쓰는 브라우저: 무시 */ } },
+};
+
+async function loadNotice() {
+  if (!API) return;
+  let n;
+  try {
+    const r = await fetch(`${API}?a=notice`);
+    n = (await r.json()).notice;
+  } catch (e) {
+    return;
+  }
+  const bar = document.getElementById('notice');
+  if (!bar || !n || !n.on || !n.text || store.get('phantom-notice', sessionStorage) === n.updated) return;
+  bar.className = `notice-bar${n.level === 'warn' ? ' warn' : ''}`;
+  bar.innerHTML = `<p>${esc(n.text)}</p><button type="button" aria-label="공지 닫기">닫기</button>`;
+  bar.hidden = false;
+  bar.querySelector('button').addEventListener('click', () => {
+    bar.hidden = true;
+    store.set('phantom-notice', n.updated, sessionStorage);
+  });
+}
+
+const KINDS = ['숫자·데이터', '화면·동작', '문구·설명', '기타'];
+const TAB_NAME = Object.fromEntries(TABS);
+
+function reportContext() {
+  const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const r = parts[0] === 'firm' ? S.byCode.get(parts[1]) : null;
+  const tab = r ? (TAB_NAME[parts[2]] ? parts[2] : 'overview') : '';
+  return {
+    route: location.hash || '#/', code: r ? r.c : '', name: r ? r.n : '', tab,
+    vw: String(window.innerWidth), ua: navigator.userAgent, data: S.meta ? S.meta.built || String(S.meta.asof) : '',
+    where: r ? `${r.n}(${r.c}) ${TAB_NAME[tab]}` : parts[0] === 'about' ? '모형 안내' : '첫 화면',
+  };
+}
+
+function openReport() {
+  if (!API || document.querySelector('dialog.report')) return;
+  const c = reportContext();
+  const dlg = document.createElement('dialog');
+  dlg.className = 'report';
+  dlg.setAttribute('aria-labelledby', 'report-title');
+  dlg.innerHTML = `<form class="report-form" novalidate>
+    <h2 id="report-title">오류 신고</h2>
+    <p class="lede">숫자가 이상하거나 화면이 깨지는 곳을 알려 주세요. 연구팀이 확인합니다.</p>
+    <fieldset class="kinds"><legend>종류</legend>${KINDS.map((k, i) => `<label><input type="radio" name="kind" value="${k}"${i ? '' : ' checked'}>${k}</label>`).join('')}</fieldset>
+    <label class="field"><span>내용</span><textarea name="text" rows="5" maxlength="2000" required placeholder="어느 화면의 무엇이 어떻게 이상한지 적어 주세요."></textarea></label>
+    <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <details class="ctx"><summary>함께 보내는 정보</summary><dl>
+      <div><dt>화면</dt><dd>${esc(c.where)}</dd></div><div><dt>화면 폭</dt><dd>${esc(c.vw)}px</dd></div>
+      <div><dt>브라우저</dt><dd>${esc(c.ua)}</dd></div><div><dt>데이터</dt><dd>${esc(c.data)}</dd></div></dl>
+      <p>이름·연락처는 받지 않습니다.</p></details>
+    <p class="msg" role="status" aria-live="polite"></p>
+    <div class="actions"><button type="button" class="btn-ghost" data-close>닫기</button><button type="submit" class="btn">보내기</button></div>
+  </form>`;
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+  const form = dlg.querySelector('form');
+  const msg = dlg.querySelector('.msg');
+  const send = dlg.querySelector('button[type="submit"]');
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const text = form.text.value.trim();
+    if (text.length < 2) { msg.textContent = '내용을 적어 주세요.'; form.text.focus(); return; }
+    let cid = store.get('phantom-cid');
+    if (!cid) { cid = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('phantom-cid', cid); }
+    send.disabled = true;
+    msg.textContent = '보내는 중…';
+    try {
+      const { where, ...ctx } = c;
+      const res = await api({ a: 'report', kind: form.kind.value, text, ctx, cid, hp: form.website.value });
+      if (res.ok) {
+        form.innerHTML = `<h2 id="report-title">신고가 접수되었습니다</h2><p class="lede">${res.id ? `접수 번호 ${esc(res.id)}. ` : ''}알려 주셔서 고맙습니다. 연구팀이 확인하겠습니다.</p>
+          <div class="actions"><button type="button" class="btn" data-close>닫기</button></div>`;
+        form.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+        return;
+      }
+      msg.textContent = res.error === 'rate' ? '조금 전에 보낸 신고가 있습니다. 잠시 뒤 다시 보내 주세요.' : '보내지 못했습니다. 내용을 확인한 뒤 다시 시도해 주세요.';
+    } catch (e) {
+      msg.textContent = '보내지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.';
+    }
+    send.disabled = false;
+  });
+  dlg.showModal();
+  form.text.focus();
 }
 
 function debounce(fn, ms) {
@@ -702,8 +881,10 @@ async function boot() {
   }
   window.addEventListener('hashchange', route);
   let lastW = window.innerWidth;
-  window.addEventListener('resize', debounce(() => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; drawCharts(); } }, 150));
+  window.addEventListener('resize', debounce(() => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; drawCharts(); fitScrollers(); } }, 150));
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-report]')) openReport(); });
   route();
+  loadNotice();
 }
 
 boot();
