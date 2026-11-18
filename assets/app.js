@@ -193,10 +193,10 @@ function renderHome() {
   const ex = EXAMPLES.map((c) => S.byCode.get(c)).filter(Boolean)
     .map((r) => `<a class="ex" href="#/firm/${r.c}"><i class="dot ${gc(r.g)}"></i>${esc(r.n)}</a>`).join('');
   app.innerHTML = `<div class="home">
-    <nav class="home-nav" aria-label="보조"><a href="#/about">모형 안내</a>${reportBtn()}</nav>
+    <nav class="home-nav" aria-label="보조"><a href="#/about">모형 안내</a>${reportBtn()}<a href="#/admin">관리자</a></nav>
     <main class="home-main">
       <h1 class="wordmark" aria-label="PHANTOM">${[...'PHANTOM'].map((c, i) => `<span aria-hidden="true" style="animation-delay:${i * 80}ms">${c}</span>`).join('')}</h1>
-      <p class="tagline">코스닥 제조업 기업이 3년 안에 한계기업이 될 위험(부실 상장폐지 포함)을 조회합니다</p>
+      <p class="tagline">코스닥 제조업 기업이 3년 안에 한계기업이 될 위험을 조회합니다</p>
       ${searchForm('q')}
       <div class="examples"><span class="ex-label">예시</span>${ex}</div>
     </main>
@@ -545,7 +545,7 @@ function fundingTab(f) {
   const dot = (v) => (v === 1 ? '<span class="held" role="img" aria-label="있음"></span>' : v === 0 ? '<span class="none" aria-label="없음">·</span>' : '<span class="none" aria-label="기록 없음">–</span>');
   const row = (label, fn, sub = '') => `<tr><td>${label}${sub ? `<span class="sub">${sub}</span>` : ''}</td>${xs.map((x) => `<td>${fn(x)}</td>`).join('')}</tr>`;
   const span = xs.length + 1;
-  return `<section class="block"><h2>자금조달</h2><p class="lede">해마다 정책금융 대출·보증을 받고 있었는지(사업보고서 주석 원문 판독)와 메자닌 발행 결정이 있었는지입니다.</p>
+  return `<section class="block"><h2>자금조달</h2><p class="lede">해마다 정책금융 대출·보증을 받고 있었는지(사업보고서 주석의 차입금·지급보증·약정 판독)와 메자닌 발행 결정이 있었는지입니다.</p>
     <div class="scroll"><table class="t mx"><thead><tr><th>항목</th>${xs.map((x) => `<th>${x.y}</th>`).join('')}</tr></thead><tbody>
     <tr class="grp"><th colspan="${span}">정책금융 보유</th></tr>
     ${row('직접대출형', (x) => dot(x.direct), '산업은행·수출입은행')}
@@ -594,7 +594,7 @@ function renderAbout() {
     </div></section>
     <section class="block"><h2>자료</h2><dl class="grid2">
       <div class="kv"><dt>재무·이자상환</dt><dd>DataGuide 주재무제표(연결 우선, 유동비율·관계사 투자·매입채무 비율은 별도)</dd></div>
-      <div class="kv"><dt>정책금융</dt><dd>사업보고서 주석 원문 판독, 기업-기관 3,453쌍</dd></div>
+      <div class="kv"><dt>정책금융</dt><dd>사업보고서 주석(차입금·지급보증·약정) 판독, 수혜 인정 기업-기관 3,453쌍(강한 근거가 반복된 쌍은 자동 인정 포함)</dd></div>
       <div class="kv"><dt>메자닌·지분율</dt><dd>DART 주요사항보고서, 최대주주 현황</dd></div>
       <div class="kv"><dt>상장폐지</dt><dd>한국거래소 상장폐지 목록</dd></div>
       <div class="kv"><dt>요약재무제표</dt><dd>DART 주요계정, 구할 수 없는 해는 DataGuide</dd></div>
