@@ -8,7 +8,7 @@ const S = { index: [], byCode: new Map(), meta: null, firms: new Map(), cur: nul
 const EXAMPLES = ['005710', '243070', '065450', '261200', '001810', '134780'];
 const GRADES = ['1', '2', '3', '4', '5', '6'];
 const GNAME = { 1: '매우 낮음', 2: '낮음', 3: '보통', 4: '주의', 5: '경계', 6: '위험', D: '한계기업' };
-const TABS = [['overview', '개요'], ['credit', '신용위험평가표'], ['fin', '요약재무제표'], ['history', '위험도 추이'], ['funding', '자금조달']];
+const TABS = [['overview', '개요'], ['credit', '위험도 평가표'], ['fin', '요약재무제표'], ['history', '위험도 추이'], ['funding', '자금조달']];
 const ICR_STATES = ['무차입', 'ICR 3 이상', 'ICR 1~3', 'ICR<1 1년째', 'ICR<1 2년 연속'];
 const ICR_LABEL = {
   '무차입': '빚이 없어 이자비용 없음',
@@ -21,14 +21,26 @@ const MINUS = '−';
 
 // ------------------------------------------------------------------ 표기
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const sgn = (v) => (v > 0 ? '+' : v < 0 ? MINUS : '');
+// 부호는 반올림한 값이 0이 아닐 때만 붙인다('−0.0%'가 나오지 않게). 천 단위는 쉼표로 묶는다.
+const fnum = (v, d, plus = false) => {
+  const s = Math.abs(v).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+  if (!/[1-9]/.test(s)) return s;
+  return (v < 0 ? MINUS : plus && v > 0 ? '+' : '') + s;
+};
+// 경계값 바로 옆의 값은 반올림하면 경계와 같아 보이므로(7.996% → 8.0%) 자릿수를 늘린다.
+const nearDigits = (v, cuts, d) => {
+  while (d < 4 && cuts.some((c) => v !== c && v.toFixed(d) === c.toFixed(d))) d++;
+  return d;
+};
 const F = {
-  pct: (v, d = 1) => (v == null ? '—' : (v < 0 ? MINUS : '') + Math.abs(v * 100).toFixed(d) + '%'),
-  spct: (v, d = 1) => (v == null ? '—' : sgn(v) + Math.abs(v * 100).toFixed(d) + '%'),
-  pp: (v, d = 1) => (v == null ? '—' : sgn(v) + Math.abs(v * 100).toFixed(d) + '%p'),
-  x: (v, d = 2) => (v == null ? '—' : (v < 0 ? MINUS : '') + Math.abs(v).toFixed(d) + '배'),
-  pts: (v, d = 1) => (v == null ? '—' : Math.abs(v) < 0.05 ? '0.0' : sgn(v) + Math.abs(v).toFixed(d)),
-  num: (v, d = 1) => (v == null ? '—' : (v < 0 ? MINUS : '') + Math.abs(v).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d })),
+  pct: (v, d = 1) => (v == null ? '—' : fnum(v * 100, d) + '%'),
+  spct: (v, d = 1) => (v == null ? '—' : fnum(v * 100, d, true) + '%'),
+  pp: (v, d = 1) => (v == null ? '—' : fnum(v * 100, d, true) + '%p'),
+  x: (v, d = 2) => (v == null ? '—' : fnum(v, d) + '배'),
+  icr: (v) => (v == null ? '—' : fnum(v, nearDigits(v, [1, 3], 2)) + '배'),
+  pd: (v) => (v == null ? '—' : fnum(v * 100, nearDigits(v * 100, S.meta.cuts.map((c) => c * 100), 1)) + '%'),
+  pts: (v, d = 1) => (v == null ? '—' : fnum(v, d, true)),
+  num: (v, d = 1) => (v == null ? '—' : fnum(v, d)),
   score: (v) => (v == null ? '—' : v.toFixed(1)),
   date: (s) => {
     if (!s) return '—';
@@ -44,15 +56,16 @@ const stateShort = (s) => (!s ? '—' : s.startsWith('D') ? '이미 한계기업
 
 function shortReason(r) {
   if (!r) return '';
-  if (r.includes('종합적으로 고려')) return '상장 적격성 실질심사';
+  if (/종합적[으을]/.test(r)) return '상장 적격성 실질심사';
   if (r.includes('최종부도')) return '최종 부도';
   if (r.includes('피흡수합병')) return '흡수합병';
   if (r.includes('완전자회사')) return '완전자회사 편입';
-  return r.replace(/\s+/g, ' ').trim();
+  const s = r.replace(/\s+/g, ' ').trim();
+  return s.length > 40 ? s.slice(0, 38) + '…' : s;
 }
 function stLong(s) {
   if (s.t === 'listed') return '코스닥 상장';
-  if (s.t === 'delisted') return `${F.date(s.date)} 상장폐지${s.reason ? ` (${shortReason(s.reason)})` : ''}`;
+  if (s.t === 'delisted') return `${F.date(s.date)} 상장폐지${s.reason ? `, ${shortReason(s.reason)}` : ''}`;
   if (s.t === 'kospi') return '코스피로 이전 상장';
   return s.label;
 }
@@ -81,7 +94,7 @@ function search(q) {
   for (const r of S.index) {
     let s = 0;
     if (isCode) {
-      if (r.c.startsWith(n)) s = 3;
+      if (r.c.startsWith(n) || r.c.replace(/^0+/, '').startsWith(n)) s = 3;
     } else if (isCho) {
       const i = r._h.indexOf(n);
       if (i === 0) s = 2.5; else if (i > 0) s = 1;
@@ -135,12 +148,19 @@ function bindSearch(form) {
     if (active >= 0) input.setAttribute('aria-activedescendant', `${list.id}-${active}`);
     else input.removeAttribute('aria-activedescendant');
   };
-  input.addEventListener('input', () => { items = search(input.value); active = items.length ? 0 : -1; draw(); });
+  input.addEventListener('input', (e) => {
+    const next = search(input.value);
+    // 한글을 조합하는 중('대ㅇ')에는 결과가 잠깐 비어도 앞 목록을 그대로 둔다.
+    if (e.isComposing && !next.length && items.length) return;
+    items = next; active = items.length ? 0 : -1; draw();
+  });
   input.addEventListener('focus', () => { if (input.value.trim()) { items = search(input.value); active = items.length ? 0 : -1; draw(); } });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown' && items.length) { active = (active + 1) % items.length; draw(); e.preventDefault(); }
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown' && list.hidden && input.value.trim()) { items = search(input.value); active = items.length ? 0 : -1; draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowDown' && items.length) { active = (active + 1) % items.length; draw(); e.preventDefault(); }
     else if (e.key === 'ArrowUp' && items.length) { active = (active - 1 + items.length) % items.length; draw(); e.preventDefault(); }
-    else if (e.key === 'Escape') { close(); }
+    else if (e.key === 'Escape') { close(); e.preventDefault(); }
   });
   input.addEventListener('blur', () => setTimeout(close, 150));
   list.addEventListener('mousedown', (e) => {
@@ -176,7 +196,7 @@ function renderHome() {
     <nav class="home-nav" aria-label="보조"><a href="#/about">모형 안내</a>${reportBtn()}</nav>
     <main class="home-main">
       <h1 class="wordmark" aria-label="PHANTOM">${[...'PHANTOM'].map((c, i) => `<span aria-hidden="true" style="animation-delay:${i * 80}ms">${c}</span>`).join('')}</h1>
-      <p class="tagline">코스닥 제조업 기업이 3년 안에 한계기업이 될 위험을 조회합니다</p>
+      <p class="tagline">코스닥 제조업 기업이 3년 안에 한계기업이 될 위험(부실 상장폐지 포함)을 조회합니다</p>
       ${searchForm('q')}
       <div class="examples"><span class="ex-label">예시</span>${ex}</div>
     </main>
@@ -190,7 +210,7 @@ function renderHome() {
 async function renderFirm(code, tab, seq) {
   const r = S.byCode.get(code);
   if (!r) return renderMissing(code);
-  document.title = `${r.n} | PHANTOM`;
+  document.title = `${r.n}${tab === 'overview' ? '' : ' ' + TABS.find((t) => t[0] === tab)[1]} | PHANTOM`;
   let f = S.firms.get(code);
   if (!f) {
     // 0.15초 넘게 걸리면 불러오는 중임을 보여 준다. 그사이 다른 화면으로 옮겼으면(seq가 바뀜) 늦게 온 응답은 버린다.
@@ -213,6 +233,7 @@ async function renderFirm(code, tab, seq) {
       <button type="button" class="btn-sm" data-retry>다시 시도</button></div>${footNote()}</main>`;
     app.querySelector('[data-retry]').addEventListener('click', route);
     bindSearch(app.querySelector('[data-search]'));
+    finishPage();
     S.lastFirm = null;
     return;
   }
@@ -220,6 +241,7 @@ async function renderFirm(code, tab, seq) {
   bindSearch(app.querySelector('[data-search]'));
   drawCharts();
   fitScrollers();
+  finishPage();
   if (S.lastFirm !== code) window.scrollTo(0, 0);
   else {
     const t = app.querySelector('.tabs');
@@ -234,8 +256,21 @@ async function renderFirm(code, tab, seq) {
 function firmHead(r, f) {
   const year = f ? f.eval.year : r.y;
   const facts = [['업종', r.i], ['평가 기준', `${year}년 결산`], ['상태', stLong(r.st)]];
-  return `<header class="firm-head"><h1>${esc(r.n)}<span class="code">${r.c}</span></h1>
-    <dl class="facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></header>`;
+  const full = r.st.t === 'delisted' && r.st.reason ? ` title="${esc(r.st.reason)}"` : '';
+  return `<header class="firm-head"><h1 tabindex="-1">${esc(r.n)}<span class="code">${r.c}</span></h1>
+    <dl class="facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd${k === '상태' ? full : ''}>${esc(v)}</dd></div>`).join('')}</dl></header>`;
+}
+
+// 화면을 새로 그린 뒤: 스크린리더가 새 화면을 알도록 제목으로 포커스를 옮기고, 표에 머리글 범위와 이름을 붙인다.
+function finishPage() {
+  for (const t of app.querySelectorAll('table')) {
+    t.querySelectorAll('thead th').forEach((th) => th.setAttribute('scope', 'col'));
+    t.querySelectorAll('tbody tr.grp th, tbody tr.dom th').forEach((th) => th.setAttribute('scope', 'colgroup'));
+    const h = t.closest('section')?.querySelector('h2');
+    if (h && !t.hasAttribute('aria-label')) t.setAttribute('aria-label', h.textContent);
+  }
+  const h1 = app.querySelector('h1[tabindex]');
+  if (h1 && !app.contains(document.activeElement)) h1.focus({ preventScroll: true });
 }
 const tabsNav = (code, tab) => `<nav class="tabs" aria-label="상세 화면">${TABS.map(([id, label]) =>
   `<a href="#/firm/${code}${id === 'overview' ? '' : '/' + id}"${id === tab ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`;
@@ -275,34 +310,35 @@ function verdict(g, score, pd, year) {
     <div class="v-grade"><span class="v-num">${esc(g)}</span><div><div class="v-name">${GNAME[g]}</div><div class="v-cap">위험도 등급</div></div></div>
     <dl class="v-stats">
       <div class="stat"><dt>위험도 점수</dt><dd>${F.score(score)}</dd></div>
-      <div class="stat"><dt>${year + 1}~${year + 3}년 한계기업 진입 확률</dt><dd>${F.pct(pd)}</dd></div>
+      <div class="stat"><dt>${year + 1}~${year + 3}년 한계기업 진입 확률</dt><dd>${F.pd(pd)}</dd></div>
     </dl>${ramp(g)}</section>`;
 }
 
 function verdictD(e, icrYears) {
-  const yrs = (icrYears || []).map((x) => `<div class="stat"><dt>${x.y}년 이자보상배율</dt><dd>${F.x(x.icr)}</dd></div>`).join('');
+  const yrs = (icrYears || []).map((x) => `<div class="stat"><dt>${x.y}년 이자보상배율</dt><dd>${x.icr == null ? '<span class="muted">표본 밖</span>' : F.icr(x.icr)}</dd></div>`).join('');
+  const gap = (icrYears || []).some((x) => x.icr == null) ? ' ‘표본 밖’은 코스닥 상장 전이라 연구 패널에 없는 해입니다. 이어진 햇수는 연구 패널의 기록입니다.' : '';
   return `<section class="verdict" aria-label="위험도 판정">
     <div class="v-grade"><span class="v-num">D</span><div><div class="v-name">한계기업</div><div class="v-cap">이미 한계기업</div></div></div>
     <dl class="v-stats">${yrs}</dl>${ramp('D')}</section>
-    <p class="calib">영업이익으로 이자비용을 갚지 못하는 상태(이자보상배율 1 미만)가 ${e && e.icr_streak ? `${e.icr_streak}년` : '3년 이상'} 이어져 이미 한계기업입니다. PHANTOM은 아직 한계기업이 아닌 기업이 3년 안에 한계기업이 될 확률을 계산하므로, 이 기업에는 진입 확률과 점수를 매기지 않습니다.</p>`;
+    <p class="calib">영업이익으로 이자비용을 갚지 못하는 상태(이자보상배율 1 미만)가 ${e && e.icr_streak ? `${e.icr_streak}년` : '3년 이상'} 이어져 이미 한계기업입니다. PHANTOM은 아직 한계기업이 아닌 기업이 3년 안에 한계기업이 될 확률을 계산하므로, 이 기업에는 진입 확률과 점수를 매기지 않습니다.${gap}</p>`;
 }
 
 function verdictNA(year) {
   return `<section class="verdict" aria-label="위험도 판정">
     <div class="v-grade"><span class="v-num">?</span><div><div class="v-name">판정 불가</div><div class="v-cap">${year}년 결산</div></div></div>
     <dl class="v-stats"></dl>${ramp('')}</section>
-    <p class="calib">빚은 있는데 이자비용 자료가 없거나 재무 자료가 비어 있어 이자상환 상태를 정할 수 없습니다. 그래서 진입 확률을 계산하지 않았습니다.</p>`;
+    <p class="calib">이자상환 상태(무차입 여부, 이자보상배율 구간, 1 미만이 이어진 햇수)를 정하는 데 필요한 자료 가운데 일부가 비어 있어 진입 확률을 계산하지 않았습니다. 화면에 이자보상배율이 보여도 전년 자료 등이 없으면 상태를 정할 수 없습니다.</p>`;
 }
 
 function calib(e) {
   const c = e.calibration;
   if (!c) return '';
-  return `<p class="calib">같은 ${e.grade}등급(${GNAME[e.grade]})으로 매겨진 기업-연도 ${c.n.toLocaleString()}개 가운데 실제로 3년 안에 한계기업이 된 비율은 <b>${F.pct(c.rate)}</b>였습니다. <span class="muted">2017~2022년 표본 밖 검증, 95% 구간 ${F.pct(c.lo)}~${F.pct(c.hi)}</span></p>`;
+  return `<p class="calib">같은 ${e.grade}등급(${GNAME[e.grade]})으로 매겨진 기업-연도 ${c.n.toLocaleString()}개 가운데 실제로 3년 안에 한계기업이 되거나 부실 사유로 상장폐지된 비율은 <b>${F.pct(c.rate)}</b>였습니다. <span class="muted">2017~2022년 표본 밖 검증(각 해를 그보다 3년 이상 앞선 자료로만 다시 만든 점수식으로 확인), 95% 구간 ${F.pct(c.lo)}~${F.pct(c.hi)}</span></p>`;
 }
 
 const stagesTable = (e) => `<div class="scroll"><table class="t"><thead><tr><th>단계</th><th>더한 항목</th><th class="r">진입 확률</th><th class="r">위험도 점수</th><th>등급</th></tr></thead><tbody>
-  ${e.stages.map((s, i) => `<tr${i === e.stages.length - 1 ? ' class="total"' : ''}><td>${esc(s.name)}</td><td class="muted">${esc(s.adds)}</td>
-    <td class="r">${F.pct(s.pd)}</td><td class="r">${F.score(scoreOf(s.pd))}</td><td>${chip(s.grade)} ${GNAME[s.grade]}</td></tr>`).join('')}
+  ${e.stages.map((s, i, a) => `<tr${i === a.length - 1 ? ' class="total"' : ''}><td>${esc(s.name)}</td><td class="muted">${esc(s.adds)}</td>
+    <td class="r">${F.pd(s.pd)}</td><td class="r">${F.score(i === a.length - 1 ? e.score : scoreOf(s.pd))}</td><td>${chip(s.grade)} ${GNAME[s.grade]}</td></tr>`).join('')}
   </tbody></table></div>`;
 
 // ---------- 항목 표시
@@ -313,7 +349,7 @@ function displayItems(f) {
   const fy = f.funding.find((x) => x.y === e.year) || {};
   const rows = [{
     key: 'ICR', domain: '이자상환 상태', group: '이자상환 능력', label: '이자상환 상태',
-    value: e.icr != null ? `ICR ${F.x(e.icr)}` : stateShort(e.state), sub: ICR_LABEL[e.state] || stateShort(e.state),
+    value: e.icr != null ? `ICR ${F.icr(e.icr)}` : stateShort(e.state), sub: ICR_LABEL[e.state] || stateShort(e.state),
     pos: ICR_STATES.indexOf(e.state) + 1, posKind: 'state', pts: sum(['S1_ICR미만1년', 'S2_ICR미만2년', 'ICR1_3', '무차입']), sig: true,
   }];
   for (const it of e.items) {
@@ -324,7 +360,7 @@ function displayItems(f) {
     };
     if (it.key === '지분율') {
       row.pts = sum(['지분율', '지분율결측']);
-      if (by['지분율결측'].value === 1) { row.value = '공시 없음'; row.sub = '중앙값 36.12%로 계산'; row.posKind = null; }
+      if (by['지분율결측'].value === 1) { row.value = '공시 없음'; row.sub = '연구 패널의 대체값 36.12%로 계산'; row.posKind = null; }
     }
     if (it.key === '메자닌발행' && it.value === 1 && fy.mezz_n) {
       row.sub = `${fy.mezz_n}건${fy.mezz_ratio ? `, 자산의 ${F.pct(fy.mezz_ratio)}` : ''}`;
@@ -375,7 +411,7 @@ function overview(f) {
   if (!GNAME[e.grade]) return verdictNA(e.year) + head + note + stripBlock(f);
   return verdict(e.grade, e.score, e.pd, e.year) + head + calib(e) + note
     + `<section class="block"><h2>단계별 결과</h2><p class="lede">기업 내부 정보만 쓴 식에서 시작해 정책금융과 메자닌 정보를 차례로 더한 결과입니다. 마지막 줄이 최종 판정입니다.</p>${stagesTable(e)}</section>`
-    + `<section class="block"><h2>점수 구성</h2><p class="lede">같은 업종의 평균적인 기업에서 출발해, 영역마다 이 기업이 평균과 다른 만큼 점수가 오르내립니다. 점수가 40점 오르면 진입 오즈가 두 배가 됩니다.</p>
+    + `<section class="block"><h2>점수 구성</h2><p class="lede">업종은 이 기업과 같고 나머지 항목은 모두 표본 평균인 가상의 기업에서 출발해, 영역마다 이 기업이 평균과 다른 만큼 점수가 오르내립니다. 점수는 높을수록 위험하고, 40점 오르면 진입 오즈(진입 확률 ÷ 진입하지 않을 확률)가 두 배가 됩니다.</p>
         <div class="chart" data-chart="waterfall"></div>
         <div class="legend"><span><i style="background:var(--up)"></i>점수를 올림</span><span><i style="background:var(--down)"></i>점수를 낮춤</span><span><i style="background:repeating-linear-gradient(45deg,var(--ink-3) 0 2px,#fff 2px 5px);outline:1px solid var(--ink-3)"></i>통계적으로 유의하지 않음</span><span><svg width="14" height="12" aria-hidden="true"><path d="M7 0v12" stroke="#cfcddd" stroke-width="1.5" stroke-dasharray="3 3"/></svg>등급 경계(3|4는 3등급과 4등급 사이)</span></div></section>`
     + moversBlock(f) + stripBlock(f);
@@ -386,7 +422,7 @@ function afterNotice(f) {
   const a = f.eval.after;
   if (!a) return '';
   const why = shortReason(f.status.reason);
-  const head = `이 기업은 평가 뒤인 ${F.date(a.date)}에 상장폐지되었습니다${why ? `(${esc(why)})` : ''}.`;
+  const head = `이 기업은 평가 뒤인 ${F.date(a.date)}에 상장폐지되었습니다${why ? `. 사유는 ‘${esc(why)}’입니다` : ''}.`;
   return a.kind === 'distress'
     ? `<p class="notice">${head} 모형은 3년 안의 부실 사유 상장폐지도 한계기업 진입과 같은 결과로 보므로, 이 평가의 실제 결과는 ‘진입’입니다. 위 등급은 ${f.eval.year}년 결산 시점의 추정치입니다.</p>`
     : `<p class="notice">${head} 부실 사유의 상장폐지가 아니어서 3년 안 결과는 판정하지 않습니다.</p>`;
@@ -400,18 +436,19 @@ function moversBlock(f) {
   const col = (title, arr) => `<div><h3>${title}</h3><ol>${arr.length ? arr.map(li).join('') : '<li><div class="muted">해당 항목 없음</div></li>'}</ol></div>`;
   const debt = [...ups, ...downs].some((r) => r.key === '부채비율변화')
     ? ' 부채비율 변화는 부채비율 수준을 함께 넣은 식의 계수라, 수준이 같은 기업끼리 비교한 연관입니다. 그래서 부채비율이 늘었는데 점수가 낮아질 수 있습니다.' : '';
-  return `<section class="block"><h2>점수를 크게 움직인 항목</h2><p class="lede">같은 업종 평균 기업과 비교해 점수를 가장 많이 올리거나 낮춘 항목입니다. 5% 수준에서 통계적으로 유의한 항목만 골랐습니다. 점수는 다른 항목이 같을 때 함께 나타나는 경향(연관)이며, 그 항목이 위험의 원인이라는 뜻은 아닙니다.${debt}</p>
+  return `<section class="block"><h2>점수를 크게 움직인 항목</h2><p class="lede">출발점(업종만 같고 나머지 항목은 표본 평균인 기업)과 비교해 점수를 가장 많이 올리거나 낮춘 항목입니다. 5% 수준에서 통계적으로 유의한 항목만 골랐습니다. 점수는 다른 항목이 같을 때 함께 나타나는 경향(연관)이며, 그 항목이 위험의 원인이라는 뜻은 아닙니다.${debt}</p>
     <div class="movers">${col('점수를 올린 항목', ups)}${col('점수를 낮춘 항목', downs)}</div></section>`;
 }
 
 function stripBlock(f) {
   const h = f.history;
-  return `<section class="block"><h2>연도별 등급</h2><p class="lede">${h[0].y}~${h[h.length - 1].y}년 결산 기준입니다. 누르면 위험도 추이로 넘어갑니다.</p>
+  const span = h.length > 1 ? `${h[0].y}~${h[h.length - 1].y}년` : `${h[0].y}년`;
+  return `<section class="block"><h2>연도별 등급</h2><p class="lede">${span} 결산 기준입니다. 누르면 위험도 추이로 넘어갑니다.</p>
     <a class="strip" href="#/firm/${f.code}/history" aria-label="연도별 등급. 위험도 추이 보기">${h.map((x) =>
       `<span class="s-cell ${gc(x.g)}" title="${x.y}년 ${esc(gLabel(x.g))}"><b>${GNAME[x.g] ? esc(x.g) : '?'}</b><i>’${String(x.y).slice(2)}</i></span>`).join('')}</a></section>`;
 }
 
-// ---------- 탭: 신용위험평가표
+// ---------- 탭: 위험도 평가표
 function credit(f) {
   const e = f.eval;
   const p = f.profile;
@@ -425,7 +462,7 @@ function credit(f) {
   const s1 = `<section class="block"><h2>1. 기업 개요</h2><dl class="grid2">${kv.map(([k, v]) => `<div class="kv"><dt>${k}</dt><dd>${esc(v ?? '—')}</dd></div>`).join('')}</dl></section>`;
   const s2 = `<section class="block"><h2>2. 위험도 등급 결과</h2>${graded
     ? `<p class="lede">재무 기준 ${e.year}년 결산, 평가 대상 기간 ${e.year + 1}~${e.year + 3}년</p>${stagesTable(e)}`
-    : `<p class="lede">${e.grade === 'D' ? `${e.year}년 결산 기준으로 이미 한계기업(D)이라 진입 확률을 계산하지 않습니다.` : '이자상환 상태를 정할 자료가 없어 판정하지 않았습니다.'}</p>`}</section>`;
+    : `<p class="lede">${e.grade === 'D' ? `${e.year}년 결산 기준으로 이미 한계기업(D)이라 진입 확률을 계산하지 않습니다.` : '이자상환 상태를 정할 자료 일부가 비어 있어 판정하지 않았습니다.'}</p>`}</section>`;
   const s3 = `<section class="block"><h2>3. 항목별 상세</h2><p class="lede">위험도 점수식에 들어가는 항목만 보여 줍니다. 같은 해 위치는 그해 아직 한계기업이 아닌 코스닥 제조업 기업 사이에서 이 기업이 놓인 5분위입니다. 막대는 왼쪽일수록 모형에서 위험이 낮은 쪽이며, 방향은 모형 계수의 부호를 따릅니다.</p>
     ${e.input_note ? `<p class="note">${esc(e.input_note)}</p>` : ''}
     ${itemTable(f, graded)}
@@ -438,7 +475,7 @@ function itemTable(f, graded) {
   const rows = displayItems(f);
   const domPts = Object.fromEntries((e.domains || []).map((d) => [d.name, d.pts]));
   const cols = graded ? 5 : 4;
-  let body = graded ? `<tr class="base"><td colspan="4">같은 업종 평균 기업의 점수(출발점)</td><td class="r">${F.score(e.base_score)}</td></tr>` : '';
+  let body = graded ? `<tr class="base"><td colspan="4">출발점: 업종만 같고 나머지 항목은 표본 평균인 기업의 점수</td><td class="r">${F.score(e.base_score)}</td></tr>` : '';
   for (const d of ['이자상환 상태', '기업 내부 재무', '정책금융', '메자닌']) {
     const rs = rows.filter((r) => r.domain === d);
     const multi = rs.length > 1;
@@ -467,15 +504,21 @@ function fin(f) {
     <tr class="grp"><th colspan="4">재무상태표</th></tr>${['자산총계', '유동자산', '비유동자산', '부채총계', '유동부채', '비유동부채', '자본총계', '이익잉여금'].map(tr).join('')}
     <tr class="grp"><th colspan="4">손익계산서</th></tr>${['매출액', '영업이익', '당기순이익'].map(tr).join('')}</tbody></table></div>`;
   const R = [
-    ['ICR', '이자보상배율(영업이익÷이자비용)', (v) => F.x(v)], ['부채비율', '부채비율(부채÷자산)', F.pct], ['부채비율변화', '부채비율 변화', F.pp],
+    ['ICR', '이자보상배율(영업이익÷이자비용)', F.icr], ['부채비율', '부채비율(부채÷자산)', F.pct], ['부채비율변화', '부채비율 변화', F.pp],
     ['유동비율', '유동비율', (v) => F.x(v)], ['ROA', 'ROA(순이익÷자산)', F.pct], ['영업CF자산', '영업현금흐름÷자산', F.pct],
     ['매출증가율', '매출액 증가율', F.spct], ['유형자산비율', '유형자산÷자산', F.pct], ['관계사투자비율', '관계사 투자÷자산', F.pct],
     ['매입채무비율', '매입채무÷자산', F.pct], ['지분율', '최대주주 지분율', (v) => (v == null ? '—' : `${v.toFixed(2)}%`)],
   ];
   const t2 = `<div class="scroll"><table class="t fin"><thead><tr><th>비율</th>${d.ratios.map((x) => `<th class="r">${x.y}년</th>`).join('')}</tr></thead><tbody>
     ${R.map(([k, label, fmt]) => `<tr><td>${label}</td>${d.ratios.map((x) => `<td class="r">${x[k] == null ? '—' : fmt(x[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  return `<section class="block"><h2>요약재무제표</h2><p class="lede">단위 ${esc(d.unit)}. 출처 ${esc(d.source)}.</p>${t1}${d.note ? `<p class="note">${esc(d.note)}</p>` : ''}</section>
-    <section class="block"><h2>위험도 점수식에 들어가는 비율</h2><p class="lede">연구 패널의 값입니다(DataGuide 주재무제표, 연결 우선). 표본의 1%·99% 경계로 다듬은 값이라 위 재무제표로 직접 계산한 값과 조금 다를 수 있습니다.</p>${t2}</section>`;
+  // 금융업 자회사 등으로 유동·비유동을 나누지 않는 재무상태표는 두 행의 합이 자산총계와 맞지 않는다.
+  const tot = by['자산총계'] || [];
+  const unsplit = tot.some((t, i) => t && by['유동자산']?.[i] != null && by['비유동자산']?.[i] != null
+    && Math.abs(by['유동자산'][i] + by['비유동자산'][i] - t) > Math.abs(t) * 0.02);
+  const notes = [d.note, unsplit ? '이 회사의 재무상태표에는 유동·비유동으로 나누지 않은 항목이 있어, 유동자산과 비유동자산의 합이 자산총계와 다른 해가 있습니다. 표는 공시 원문 그대로입니다.' : '']
+    .filter(Boolean).map((n) => `<p class="note">${esc(n)}</p>`).join('');
+  return `<section class="block"><h2>요약재무제표</h2><p class="lede">단위 ${esc(d.unit)}. 출처 ${esc(d.source)}.</p>${t1}${notes}</section>
+    <section class="block"><h2>위험도 점수식에 들어가는 비율</h2><p class="lede">연구 패널의 값입니다(DataGuide 주재무제표). 유동비율, 관계사 투자÷자산, 매입채무÷자산은 별도 재무제표 기준이고 나머지는 연결 우선입니다. 또 표본의 1%·99% 경계로 다듬은 값이라, 위 재무제표로 직접 계산한 값과 다를 수 있습니다.</p>${t2}</section>`;
 }
 
 // ---------- 탭: 위험도 추이
@@ -485,14 +528,14 @@ function outcomeText(h) {
   if (h.y3 === 0) return '진입 안 함';
   if (h.g === 'D') return '이미 한계기업';
   if (h.y > 2022) return '아직 확정 전';
-  return '판단 불가';
+  return '확인할 수 없음';
 }
 function historyTab(f) {
   const rows = f.history.slice().reverse().map((h) => `<tr><td>${h.y}년</td><td>${chip(h.g)} ${esc(GNAME[h.g] || '판정 불가')}</td>
-    <td class="r">${F.score(h.score)}</td><td class="r">${F.pct(h.pd)}</td><td>${esc(stateShort(h.state))}</td><td class="r">${F.x(h.icr)}</td><td>${outcomeText(h)}</td></tr>`).join('');
-  return `<section class="block"><h2>위험도 추이</h2><p class="lede">해마다 그해 결산으로 매긴 위험도 점수입니다. 바탕의 띠는 등급 구간, 맨 위 줄은 이미 한계기업이었던 해, 맨 아래 줄은 실제로 3년 안에 한계기업이 되었는지(2022년 결산까지 확정)입니다.</p>
+    <td class="r">${F.score(h.score)}</td><td class="r">${F.pd(h.pd)}</td><td>${esc(stateShort(h.state))}</td><td class="r">${F.icr(h.icr)}</td><td>${outcomeText(h)}</td></tr>`).join('');
+  return `<section class="block"><h2>위험도 추이</h2><p class="lede">지금의 점수식을 해마다 그해 결산에 다시 적용한 점수입니다. 그해에 실제로 매겨진 점수가 아니고, 점수식의 상수를 2020~2022년 진입률에 맞췄기 때문에 진입률이 낮던 2013~2020년에는 확률이 실제 진입률보다 평균 2~5%p 높게 나옵니다. 바탕의 띠는 등급 구간, 맨 위 줄은 이미 한계기업이었던 해, 맨 아래 줄은 실제로 3년 안에 한계기업이 되거나 부실 사유로 상장폐지되었는지(2022년 결산까지 확정)입니다.</p>
       <div class="chart" data-chart="history"></div>
-      <div class="legend"><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="#1b1930"/></svg>3년 안에 진입</span><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="#6e6c86" stroke-width="1.5"/></svg>진입 안 함</span><span><i style="background:var(--gD)"></i>이미 한계기업(D)</span></div></section>
+      <div class="legend"><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="#1b1930"/></svg>3년 안에 진입</span><span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="none" stroke="#6e6c86" stroke-width="1.5"/></svg>진입 안 함</span><span><i style="background:var(--gD)"></i>이미 한계기업(D)</span><span><i style="background:repeating-linear-gradient(45deg,#9b99b0 0 2px,#fff 2px 5px);outline:1px solid #9b99b0"></i>판정 불가</span></div></section>
     <section class="block"><h2>연도별 표</h2><div class="scroll"><table class="t"><thead><tr><th>결산 연도</th><th>등급</th><th class="r">위험도 점수</th><th class="r">진입 확률</th><th>이자상환 상태</th><th class="r">ICR</th><th>3년 안 실제 결과</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 
@@ -520,9 +563,10 @@ const RENDER = { overview, credit, fin, history: historyTab, funding: fundingTab
 
 function renderMissing(code) {
   document.title = 'PHANTOM';
-  app.innerHTML = `${topBar()}<main class="page"><header class="firm-head"><h1>찾는 기업이 없습니다</h1></header>
+  app.innerHTML = `${topBar()}<main class="page"><header class="firm-head"><h1 tabindex="-1">찾는 기업이 없습니다</h1></header>
     <p class="lede" style="margin-top:12px">종목코드 ${esc(code)}는 PHANTOM 표본(2013~2024년 코스닥 제조업)에 없습니다. 위 검색창에서 기업명으로 찾아보세요.</p>${footNote()}</main>`;
   bindSearch(app.querySelector('[data-search]'));
+  finishPage();
 }
 
 // ------------------------------------------------------------------ 모형 안내
@@ -534,22 +578,22 @@ function renderAbout() {
     <td class="r">${x.oos_rate == null ? '—' : `<b>${F.pct(x.oos_rate)}</b>`}</td><td class="r muted">${x.oos_rate == null ? '' : `${F.pct(x.oos_lo)}~${F.pct(x.oos_hi)}`}</td>
     <td class="r">${x.oos_n == null ? '—' : x.oos_n.toLocaleString()}</td><td class="r">${(dist[x.g] ?? 0).toLocaleString()}</td></tr>`).join('');
   app.innerHTML = `${topBar('about')}<main class="page">
-    <header class="firm-head"><h1>모형 안내</h1></header>
+    <header class="firm-head"><h1 tabindex="-1">모형 안내</h1></header>
     <section class="block"><div class="prose">
-      <p>PHANTOM은 코스닥 제조업 기업이 앞으로 3년 안에 한계기업이 될 위험을 보여 줍니다. 한계기업은 영업이익으로 이자비용을 갚지 못하는 상태(이자보상배율 1 미만)가 3년 연속 이어진 기업입니다.</p>
+      <p>PHANTOM은 코스닥 제조업 기업이 앞으로 3년 안에 한계기업이 될 위험을 보여 줍니다. 한계기업은 영업이익으로 이자비용을 갚지 못하는 상태(이자보상배율 1 미만)가 3년 연속 이어진 기업입니다. 이 사이트에서 ‘진입’은 3년 안에 한계기업이 되거나 부실 사유로 상장폐지된 경우를 함께 가리킵니다.</p>
       <p>위험은 2013~2022년 코스닥 제조업 995개사, 6,633개 기업-연도로 추정한 로지스틱 회귀식으로 계산합니다. 한 해의 결산 자료를 넣으면 다음 3년 안에 한계기업이 되거나 부실 사유로 상장폐지될 확률이 나옵니다. 그 기간에 실제로 진입한 경우는 1,251건(18.9%)이었습니다.</p>
     </div></section>
-    <section class="block"><h2>등급 기준</h2><p class="lede">진입 확률이 두 배가 될 때마다 한 등급씩 올라갑니다. 실제 진입률은 점수식을 만들 때 쓰지 않은 해(2017~2022년)에 각 등급 기업이 실제로 한계기업이 된 비율입니다.</p>
+    <section class="block"><h2>등급 기준</h2><p class="lede">진입 확률이 두 배가 될 때마다 한 등급씩 올라갑니다. 실제 진입률은 2017~2022년의 각 해를, 그보다 3년 이상 앞선 자료로만 다시 만든 점수식으로 매겼을 때 각 등급 기업이 실제로 진입한 비율입니다(표본 밖 검증).</p>
       <div class="scroll"><table class="t"><thead><tr><th>등급</th><th class="r">진입 확률</th><th class="r">위험도 점수</th><th class="r">실제 진입률</th><th class="r">95% 구간</th><th class="r">기업-연도</th><th class="r">2024년 기업 수</th></tr></thead><tbody>${gradeRows}
       <tr><td>${chip('판정 불가')} 판정 불가</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td></td><td class="r">—</td><td class="r">${(dist['판정 불가'] ?? 0).toLocaleString()}</td></tr></tbody></table></div>
       <p class="note">2024년 결산 기준 ${Object.values(dist).reduce((a, b) => a + b, 0).toLocaleString()}개사. 표본 밖 검증의 AUC는 0.826입니다(진입 기업과 진입하지 않은 기업을 하나씩 골랐을 때 진입 기업의 점수가 더 높을 확률).</p></section>
     <section class="block"><h2>점수식</h2><div class="prose">
       <div class="formula">진입 확률 = 1 ÷ (1 + e<sup>−z</sup>)<br>z = 상수 + 업종 + Σ 계수 × 항목 값<br>위험도 점수 = 500 + 57.71 × ln(진입 확률 ÷ (1 − 진입 확률))</div>
-      <p>항목은 이자상환 상태 4개, 기업 내부 재무 11개(부채비율, 부채비율 변화, 유동비율, ROA, 영업현금흐름÷자산, 매출액 증가율, 자산 규모, 업력, 유형자산÷자산, 관계사 투자÷자산, 매입채무÷자산), 최대주주 지분율 2개, 정책금융 보유 3유형, 메자닌 발행 1개와 업종입니다. 상수는 최근 3년(2020~2022년) 실제 진입률 20.8%에 맞췄고, 위험도 점수는 40점 오를 때마다 진입 오즈가 두 배가 됩니다.</p>
+      <p>항목은 이자상환 상태 4개, 기업 내부 재무 11개(부채비율, 부채비율 변화, 유동비율, ROA, 영업현금흐름÷자산, 매출액 증가율, 자산 규모, 업력, 유형자산÷자산, 관계사 투자÷자산, 매입채무÷자산), 최대주주 지분율 2개, 정책금융 보유 3유형, 메자닌 발행 1개와 업종입니다. 상수는 최근 3년(2020~2022년) 실제 진입률 20.8%에 맞췄습니다. 위험도 점수는 높을수록 위험하고, 40점 오를 때마다 진입 오즈(진입 확률 ÷ 진입하지 않을 확률)가 두 배가 됩니다.</p>
       <p>개요 화면의 단계별 결과는 같은 방식으로 만든 세 식(기업 내부 정보만, 정책금융 추가, 메자닌 추가)의 결과이고, 마지막 식이 최종 판정입니다.</p>
     </div></section>
     <section class="block"><h2>자료</h2><dl class="grid2">
-      <div class="kv"><dt>재무·이자상환</dt><dd>DataGuide 주재무제표(연결 우선)</dd></div>
+      <div class="kv"><dt>재무·이자상환</dt><dd>DataGuide 주재무제표(연결 우선, 유동비율·관계사 투자·매입채무 비율은 별도)</dd></div>
       <div class="kv"><dt>정책금융</dt><dd>사업보고서 주석 원문 판독, 기업-기관 3,453쌍</dd></div>
       <div class="kv"><dt>메자닌·지분율</dt><dd>DART 주요사항보고서, 최대주주 현황</dd></div>
       <div class="kv"><dt>상장폐지</dt><dd>한국거래소 상장폐지 목록</dd></div>
@@ -564,6 +608,7 @@ function renderAbout() {
     <section class="block"><h2>만든 곳</h2><p class="lede">광운대학교 참빛설계학기 연구팀, 2026년 11월</p></section>
     ${footNote()}</main>`;
   bindSearch(app.querySelector('[data-search]'));
+  finishPage();
   window.scrollTo(0, 0);
   S.lastFirm = null;
 }
@@ -583,7 +628,7 @@ function drawWaterfall(el, e) {
   const L = narrow ? 104 : 176;
   const R = narrow ? 50 : 64;
   const rowH = narrow ? 36 : 40;
-  const rows = [{ label: narrow ? '업종 평균' : '같은 업종 평균 기업', type: 'base', v: e.base_score }];
+  const rows = [{ label: narrow ? '출발점' : '출발점(같은 업종)', type: 'base', v: e.base_score }];
   let cur = e.base_score;
   for (const d of e.domains) {
     rows.push({ label: d.name, type: 'delta', a: cur, b: cur + d.pts, v: d.pts, ns: d.name === '정책금융' });
@@ -711,7 +756,7 @@ function drawHistory(el, f) {
   const xh = el.querySelector('.xh');
   const show = (i) => {
     const h = hs[i];
-    tip.innerHTML = `<b>${h.y}년 결산</b><br>${chip(h.g)} ${esc(gLabel(h.g))}<br>위험도 점수 <b>${F.score(h.score)}</b><br>진입 확률 ${F.pct(h.pd)}<br>${esc(stateShort(h.state))}, ICR ${F.x(h.icr)}<br>3년 안 실제 결과 ${outcomeText(h)}`;
+    tip.innerHTML = `<b>${h.y}년 결산</b><br>${chip(h.g)} ${esc(gLabel(h.g))}<br>위험도 점수 <b>${F.score(h.score)}</b><br>진입 확률 ${F.pd(h.pd)}<br>${esc(stateShort(h.state))}, ICR ${F.icr(h.icr)}<br>3년 안 실제 결과 ${outcomeText(h)}`;
     tip.hidden = false;
     const x = X(h.y);
     xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.setAttribute('visibility', 'visible');
@@ -740,7 +785,10 @@ async function getJSON(p) {
 function route() {
   const seq = ++S.seq;
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  if (parts[0] === 'firm' && parts[1]) return renderFirm(parts[1], TABS.some((t) => t[0] === parts[2]) ? parts[2] : 'overview', seq);
+  if (parts[0] === 'firm' && parts[1]) {
+    const code = /^\d{1,5}$/.test(parts[1]) ? parts[1].padStart(6, '0') : parts[1];
+    return renderFirm(code, TABS.some((t) => t[0] === parts[2]) ? parts[2] : 'overview', seq);
+  }
   if (parts[0] === 'about') return renderAbout();
   S.lastFirm = null;
   if (parts[0] === 'admin') return renderAdmin(parts[1], seq);

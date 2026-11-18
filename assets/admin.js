@@ -4,7 +4,7 @@
 
 const VIEWS = [['reports', '신고함'], ['notice', '공지 배너'], ['data', '데이터 현황']];
 const STATUSES = ['새 신고', '확인 중', '해결', '보류'];
-const TAB_NAME = { overview: '개요', credit: '신용위험평가표', fin: '요약재무제표', history: '위험도 추이', funding: '자금조달' };
+const TAB_NAME = { overview: '개요', credit: '위험도 평가표', fin: '요약재무제표', history: '위험도 추이', funding: '자금조달' };
 const KEY = 'phantom-admin-key';
 
 let X;                                  // app.js가 넘겨준 도구와 상태
@@ -243,7 +243,7 @@ async function dataView(body) {
       ${table(['요약재무제표 출처', '기업 수'], [['DART 연결', st.counts.fin.CFS], ['DART 별도', st.counts.fin.OFS], ['DataGuide', st.counts.fin.DG], ['재무제표 없음', st.counts.fin.none]]
         .map(([k, v]) => `<tr><td>${k}</td><td class="r">${n(v)}</td></tr>`))}</div></section>
     <section class="block"><h2>경계값 표시</h2>
-      <p class="lede">신용위험평가표에서 † 표시가 붙는 항목입니다. 값이 표본의 1%·99% 경계에 걸려 모형에는 경계값이 들어갔습니다. ${n(st.clipped.firms)}개사가 해당합니다.</p>
+      <p class="lede">위험도 평가표에서 † 표시가 붙는 항목입니다. 값이 표본의 1%·99% 경계에 걸려 모형에는 경계값이 들어갔습니다. ${n(st.clipped.firms)}개사가 해당합니다.</p>
       ${table(['항목', '항목 수'], Object.entries(st.clipped.items).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="r">${n(v)}</td></tr>`))}</section>
     <section class="block"><h2>확인이 필요한 기업</h2>
       <p class="lede">화면에 따로 안내문이 붙는 기업입니다. 눌러서 펼치면 목록이 나옵니다.</p>
