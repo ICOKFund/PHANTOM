@@ -276,6 +276,7 @@ a { color: inherit; }
 
 /* ---------- 공지 배너(관리자 화면에서 켜고 끔) ---------- */
 .notice-bar { display: flex; align-items: center; gap: 16px; padding: 10px 24px; background: var(--wash); border-bottom: 1px solid var(--rule); color: var(--ink); font-size: 14.5px; line-height: 1.5; }
+.notice-bar[hidden] { display: none; }
 .notice-bar p { flex: 1; margin: 0 auto; max-width: 1032px; }
 .notice-bar.warn { background: var(--g6); border-bottom-color: var(--g6); color: #fff; }
 .notice-bar button { flex: none; height: 32px; padding: 0 12px; border: 1px solid currentColor; border-radius: 16px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
