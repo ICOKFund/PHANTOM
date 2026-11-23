@@ -202,7 +202,7 @@ function renderHome() {
       ${searchForm('q')}
       <div class="examples"><span class="ex-label">예시</span>${ex}</div>
     </main>
-    <footer class="home-foot">${S.meta.asof}년 결산 공시를 바탕으로 한 연구 모형의 추정치이며, 투자 권유나 신용평가가 아닙니다.<br>광운대학교 참빛설계학기 연구팀</footer>
+    <footer class="home-foot">${S.meta.asof}년 결산 공시를 바탕으로 한 연구 모형의 추정치이며, 투자 권유나 신용평가가 아닙니다.<br>광운대학교 참빛설계학기 ‘고스트헌터’</footer>
   </div>`;
   bindSearch(app.querySelector('[data-search]'));
   if (matchMedia('(hover: hover) and (pointer: fine)').matches) app.querySelector('#q').focus();
@@ -607,7 +607,7 @@ function renderAbout() {
       <p>재무 상태를 통제하면 정책금융 보유는 진입과 뚜렷한 연관이 없었습니다(세 유형 결합 p = 0.53). 메자닌을 발행한 해에는 재무 상태가 같아도 3년 안 진입 오즈가 약 1.8배 높았습니다. 그래도 표본 밖 예측력은 이자상환 상태와 재무 변수가 대부분을 설명합니다.</p>
       <p>정책금융은 받고 있었는지만 관찰했고, 새로 받은 시점과 금액은 반영하지 않았습니다. 등급은 ${S.meta.asof}년 결산 공시로 계산한 추정치입니다. 실제 결과는 ${S.meta.asof_outcome}년 결산까지, 상장 상태는 ${F.date(S.meta.asof_status)} 기준으로 확인했고, 평가 뒤에 상장폐지된 기업은 기업 화면에 따로 알립니다.</p>
     </div></section>
-    <section class="block"><h2>만든 곳</h2><p class="lede">광운대학교 참빛설계학기 연구팀, 2026년 11월</p></section>
+    <section class="block"><h2>만든 곳</h2><p class="lede">광운대학교 참빛설계학기 ‘고스트헌터’, 2026년 11월</p></section>
     ${footNote()}</main>`;
   bindSearch(app.querySelector('[data-search]'));
   finishPage();
