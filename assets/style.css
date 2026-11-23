@@ -1,5 +1,6 @@
 /* PHANTOM — 코스닥 한계기업 위험도 조회
-   위험 등급은 보라 한 색의 농도: 옅을수록 위험이 낮고, 짙어질수록 위험이 형체를 갖춘다. */
+   위험 등급(10단계 + D)은 보라 한 색의 농도: 옅을수록 위험이 낮고, 짙어질수록 위험이 형체를 갖춘다.
+   등급 색은 OKLCH 밝기 0.77 → 0.20을 같은 간격으로 나눈 단계(dataviz 순서형 검사 통과). UI 강조색(--a4~6)은 등급 색과 따로 둔다. */
 :root {
   color-scheme: light;
   --bg: #ffffff;
@@ -9,7 +10,8 @@
   --ink-3: #6e6c86;
   --rule: #e6e5ee;
   --rule-strong: #cfcddd;
-  --g1: #b1aaf1; --g2: #958ae4; --g3: #7563d2; --g4: #6349c1; --g5: #4c2ba3; --g6: #341878; --gD: #181232;
+  --g1: #b0a9f1; --g2: #9d93e8; --g3: #897cde; --g4: #7765d3; --g5: #674fc5; --g6: #573ab1; --g7: #472799; --g8: #361a7b; --g9: #251653; --g10: #16102e; --gD: #070515;
+  --a4: #6349c1; --a5: #4c2ba3; --a6: #341878;   /* UI 강조색 */
   --up: #6349c1;     /* 위험을 올린 기여 */
   --down: #059583;   /* 위험을 낮춘 기여 */
   --focus: #6349c1;
@@ -32,10 +34,14 @@ a { color: inherit; }
 /* ---------- 등급 색 ---------- */
 .g-1 { --g: var(--g1); --on: var(--ink); }
 .g-2 { --g: var(--g2); --on: var(--ink); }
-.g-3 { --g: var(--g3); --on: #fff; }
+.g-3 { --g: var(--g3); --on: var(--ink); }
 .g-4 { --g: var(--g4); --on: #fff; }
 .g-5 { --g: var(--g5); --on: #fff; }
 .g-6 { --g: var(--g6); --on: #fff; }
+.g-7 { --g: var(--g7); --on: #fff; }
+.g-8 { --g: var(--g8); --on: #fff; }
+.g-9 { --g: var(--g9); --on: #fff; }
+.g-10 { --g: var(--g10); --on: #fff; }
 .g-D { --g: var(--gD); --on: #fff; }
 .g-na { --g: #d9d8e2; --on: var(--ink-2); }
 .chip {
@@ -51,7 +57,7 @@ a { color: inherit; }
   border: 1px solid var(--rule-strong); border-radius: 30px; background: #fff;
   transition: border-color .15s, box-shadow .15s;
 }
-.search-box:focus-within { border-color: var(--g4); box-shadow: 0 0 0 4px rgba(99, 73, 193, .12); }
+.search-box:focus-within { border-color: var(--a4); box-shadow: 0 0 0 4px rgba(99, 73, 193, .12); }
 .search-ico { flex: none; color: var(--ink-3); }
 .search input {
   flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
@@ -63,7 +69,7 @@ a { color: inherit; }
   flex: none; width: 44px; height: 44px; border: 0; border-radius: 22px; cursor: pointer;
   display: grid; place-items: center; background: var(--ink); color: #fff;
 }
-.search-go:hover { background: var(--g5); }
+.search-go:hover { background: var(--a5); }
 .suggest {
   position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 40;
   margin: 0; padding: 6px; list-style: none; background: #fff;
@@ -162,13 +168,13 @@ h1[tabindex]:focus { outline: none; }
 .stat dd { margin: 2px 0 0; font-size: 32px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .stat dd small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 4px; }
 
-.ramp { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(6, 1fr) 14px 1fr; column-gap: 2px; margin-top: 26px; }
+.ramp { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(10, 1fr) 14px 1.4fr; column-gap: 2px; margin-top: 26px; }
 .r-cell {
   height: 46px; display: grid; place-items: center; align-self: end;
   background: var(--g); color: var(--on); font-weight: 700; font-size: 19px;
 }
 .r-cell:first-child { border-radius: 6px 0 0 6px; }
-.r-cell:nth-child(6) { border-radius: 0 6px 6px 0; }
+.r-cell:nth-child(10) { border-radius: 0 6px 6px 0; }
 .r-cell.g-D { border-radius: 6px; }
 .r-cell.is-cur { height: 66px; border-radius: 6px; box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); position: relative; z-index: 1; }
 .r-name { padding-top: 10px; font-size: 13px; color: var(--ink-3); text-align: center; }
@@ -255,7 +261,7 @@ h1[tabindex]:focus { outline: none; }
 .mx .none { color: var(--ink-3); }
 
 /* ---------- 안내 ---------- */
-.notice { margin-top: 30px; padding: 18px 20px; border-left: 3px solid var(--g4); background: var(--wash); font-size: 15px; color: var(--ink-2); }
+.notice { margin-top: 30px; padding: 18px 20px; border-left: 3px solid var(--a4); background: var(--wash); font-size: 15px; color: var(--ink-2); }
 .prose { max-width: 72ch; }
 .prose p { margin: 0 0 14px; }
 .formula { margin: 8px 0 18px; padding: 14px 18px; background: var(--wash); border-radius: 8px; font-size: 15px; }
@@ -268,7 +274,7 @@ h1[tabindex]:focus { outline: none; }
 /* ---------- 버튼 ---------- */
 .btn, .btn-ghost, .btn-sm { font: inherit; cursor: pointer; border-radius: 999px; color: var(--ink); }
 .btn { height: 44px; padding: 0 22px; border: 0; background: var(--ink); color: #fff; font-size: 15px; font-weight: 600; }
-.btn:hover { background: var(--g5); }
+.btn:hover { background: var(--a5); }
 .btn-ghost { height: 44px; padding: 0 18px; border: 1px solid var(--rule-strong); background: #fff; font-size: 15px; }
 .btn-sm { height: 36px; padding: 0 14px; border: 1px solid var(--rule-strong); background: #fff; font-size: 14px; }
 .notice .btn-sm { margin-left: 8px; }
@@ -279,7 +285,7 @@ h1[tabindex]:focus { outline: none; }
 .notice-bar { display: flex; align-items: center; gap: 16px; padding: 10px 24px; background: var(--wash); border-bottom: 1px solid var(--rule); color: var(--ink); font-size: 14.5px; line-height: 1.5; }
 .notice-bar[hidden] { display: none; }
 .notice-bar p { flex: 1; margin: 0 auto; max-width: 1032px; }
-.notice-bar.warn { background: var(--g6); border-bottom-color: var(--g6); color: #fff; }
+.notice-bar.warn { background: var(--a6); border-bottom-color: var(--a6); color: #fff; }
 .notice-bar button { flex: none; height: 32px; padding: 0 12px; border: 1px solid currentColor; border-radius: 16px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
 
 /* ---------- 오류 신고 창 ---------- */
@@ -325,8 +331,8 @@ dialog.report::backdrop { background: rgba(27, 25, 48, .36); }
 .ri-head b { color: var(--ink); font-weight: 700; }
 .ri-head .kind { color: var(--ink-2); }
 .st { padding: 1px 8px; border: 1px solid var(--rule-strong); border-radius: 4px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
-.st-0 { background: var(--g4); border-color: var(--g4); color: #fff; }
-.st-1 { border-color: var(--g4); color: var(--g4); }
+.st-0 { background: var(--a4); border-color: var(--a4); color: #fff; }
+.st-1 { border-color: var(--a4); color: var(--a4); }
 .st-2 { color: var(--ink-3); font-weight: 500; }
 .ri-text { margin: 8px 0 10px; max-width: 80ch; font-size: 15px; white-space: pre-wrap; }
 .ri-meta { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0 0 10px; font-size: 13px; color: var(--ink-3); }
@@ -356,7 +362,7 @@ dialog.report::backdrop { background: rgba(27, 25, 48, .36); }
   .v-num { font-size: 104px; }
   .v-stats { justify-content: flex-start; gap: 28px; }
   .stat dd { font-size: 26px; }
-  .ramp { grid-template-columns: repeat(6, 1fr) 8px 1fr; }
+  .ramp { grid-template-columns: repeat(10, 1fr) 6px 1.8fr; column-gap: 1px; }
   .r-cell { height: 40px; font-size: 16px; }
   .r-cell.is-cur { height: 56px; }
   .r-name { font-size: 11px; letter-spacing: -.02em; }

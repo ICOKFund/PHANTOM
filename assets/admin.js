@@ -226,7 +226,7 @@ async function dataView(body) {
   const table = (head, rows) => `<div class="scroll"><table class="t"><thead><tr>${head.map((h, i) => `<th${i && /^(기업 수|항목 수|평가|건수)$/.test(h) ? ' class="r"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
   const list = (title, arr, head, row) => (arr.length
     ? `<details class="list"><summary>${title} <b>${n(arr.length)}</b></summary>${table(head, arr.map(row))}</details>` : '');
-  const gs = ['1', '2', '3', '4', '5', '6', 'D', '판정 불가'];
+  const gs = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'D', '판정 불가'];
   const stName = { listed: '상장', delisted: '상장폐지', kospi: '코스피 이전', other: '기타' };
   const after = st.after.slice().sort((a, b) => (b.kind === 'distress') - (a.kind === 'distress') || b.date.localeCompare(a.date));
   body.innerHTML = `

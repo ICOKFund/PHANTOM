@@ -6,8 +6,10 @@ const app = document.getElementById('app');
 const API = 'https://script.google.com/macros/s/AKfycby-yi_wFnmS353NlVlcCkMOzWvNzYjLLzih7q4a-MD-oyh9f3gWRO8dgepgRhtVIvd67A/exec';
 const S = { index: [], byCode: new Map(), meta: null, firms: new Map(), cur: null, lastFirm: null, seq: 0 };
 const EXAMPLES = ['005710', '243070', '065450', '261200', '001810', '134780'];
-const GRADES = ['1', '2', '3', '4', '5', '6'];
-const GNAME = { 1: '매우 낮음', 2: '낮음', 3: '보통', 4: '주의', 5: '경계', 6: '위험', D: '한계기업' };
+// 위험도 등급 10단계 + D: 이름은 두 등급씩 묶어 붙인다(1 매우 낮음, 2~3 낮음, 4~5 보통, 6~7 주의, 8~9 경계, 10 위험)
+const GRADES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const GNAME = { 1: '매우 낮음', 2: '낮음', 3: '낮음', 4: '보통', 5: '보통', 6: '주의', 7: '주의', 8: '경계', 9: '경계', 10: '위험', D: '한계기업' };
+const GROUPS = [['1'], ['2', '3'], ['4', '5'], ['6', '7'], ['8', '9'], ['10']];
 const TABS = [['overview', '개요'], ['credit', '위험도 평가표'], ['fin', '요약재무제표'], ['history', '위험도 추이'], ['funding', '자금조달']];
 const ICR_STATES = ['무차입', 'ICR 3 이상', 'ICR 1~3', 'ICR<1 1년째', 'ICR<1 2년 연속'];
 const ICR_LABEL = {
@@ -300,9 +302,9 @@ function fitScrollers() {
 function ramp(cur) {
   const cells = GRADES.map((g) => `<div class="r-cell ${gc(g)}${g === cur ? ' is-cur' : ''}">${g}</div>`).join('')
     + `<div></div><div class="r-cell g-D${cur === 'D' ? ' is-cur' : ''}">D</div>`;
-  const names = GRADES.map((g) => `<div class="r-name${g === cur ? ' is-cur' : ''}">${GNAME[g]}</div>`).join('')
+  const names = GROUPS.map((gs) => `<div class="r-name${gs.includes(cur) ? ' is-cur' : ''}" style="grid-column: span ${gs.length}">${GNAME[gs[0]]}</div>`).join('')
     + `<div></div><div class="r-name${cur === 'D' ? ' is-cur' : ''}">한계기업</div>`;
-  return `<div class="ramp" role="img" aria-label="${esc(gLabel(cur))}. 척도는 1등급 매우 낮음부터 6등급 위험까지, 그리고 이미 한계기업인 D">${cells}${names}</div>`;
+  return `<div class="ramp" role="img" aria-label="${esc(gLabel(cur))}. 척도는 1등급 매우 낮음부터 10등급 위험까지, 그리고 이미 한계기업인 D">${cells}${names}</div>`;
 }
 
 function verdict(g, score, pd, year) {
@@ -549,14 +551,14 @@ function fundingTab(f) {
     <div class="scroll"><table class="t mx"><thead><tr><th>항목</th>${xs.map((x) => `<th>${x.y}</th>`).join('')}</tr></thead><tbody>
     <tr class="grp"><th colspan="${span}">정책금융 보유</th></tr>
     ${row('직접대출형', (x) => dot(x.direct), '산업은행·수출입은행')}
-    ${row('보증·정책자금형', (x) => dot(x.guar), '신용보증기금·기술보증기금·중소벤처기업진흥공단')}
+    ${row('보증형', (x) => dot(x.guar), '신용보증기금·기술보증기금')}
     ${row('기업은행', (x) => dot(x.ibk))}
     <tr class="grp"><th colspan="${span}">메자닌 발행(CB·BW·EB)</th></tr>
     ${row('발행 건수', (x) => (x.mezz_n ? `${x.mezz_n}건` : dot(x.mezz)))}
     ${row('발행액÷자산', (x) => (x.mezz_ratio ? F.pct(x.mezz_ratio) : dot(x.mezz)))}
     ${row('리픽싱 조건', (x) => dot(x.refix), '2020년 공시부터 기록')}
     </tbody></table></div>
-    <p class="note">● 있음, · 없음, – 기록 없음. 연구 결과에서 재무 상태가 같다면 정책금융 보유는 한계기업 진입과 뚜렷한 연관이 없었고(세 유형 결합 p = 0.46), 메자닌을 발행한 해에는 3년 안 진입 오즈가 약 1.8배 높았습니다.</p></section>`;
+    <p class="note">● 있음, · 없음, – 기록 없음. 연구 결과에서 재무 상태가 같다면 정책금융 보유는 한계기업 진입과 뚜렷한 연관이 없었고(세 유형 결합 p = 0.53), 메자닌을 발행한 해에는 3년 안 진입 오즈가 약 1.8배 높았습니다.</p></section>`;
 }
 
 const RENDER = { overview, credit, fin, history: historyTab, funding: fundingTab };
@@ -583,7 +585,7 @@ function renderAbout() {
       <p>PHANTOM은 코스닥 제조업 기업이 앞으로 3년 안에 한계기업이 될 위험을 보여 줍니다. 한계기업은 영업이익으로 이자비용을 갚지 못하는 상태(이자보상배율 1 미만)가 3년 연속 이어진 기업입니다. 이 사이트에서 ‘진입’은 3년 안에 한계기업이 되거나 부실 사유로 상장폐지된 경우를 함께 가리킵니다.</p>
       <p>위험은 2013~2022년 코스닥 제조업 995개사, 6,633개 기업-연도로 추정한 로지스틱 회귀식으로 계산합니다. 한 해의 결산 자료를 넣으면 다음 3년 안에 한계기업이 되거나 부실 사유로 상장폐지될 확률이 나옵니다. 그 기간에 실제로 진입한 경우는 1,251건(18.9%)이었습니다.</p>
     </div></section>
-    <section class="block"><h2>등급 기준</h2><p class="lede">진입 확률이 두 배가 될 때마다 한 등급씩 올라갑니다. 실제 진입률은 2017~2022년의 각 해를, 그보다 3년 이상 앞선 자료로만 다시 만든 점수식으로 매겼을 때 각 등급 기업이 실제로 진입한 비율입니다(표본 밖 검증).</p>
+    <section class="block"><h2>등급 기준</h2><p class="lede">진입 확률 4% 미만은 1등급이고, 그 위로는 진입 확률이 약 1.4배(√2배)가 될 때마다 한 등급씩 올라 10등급까지 있습니다. 이름은 두 등급씩 묶어 붙였습니다. 실제 진입률은 2017~2022년의 각 해를, 그보다 3년 이상 앞선 자료로만 다시 만든 점수식으로 매겼을 때 각 등급 기업이 실제로 진입한 비율입니다(표본 밖 검증).</p>
       <div class="scroll"><table class="t"><thead><tr><th>등급</th><th class="r">진입 확률</th><th class="r">위험도 점수</th><th class="r">실제 진입률</th><th class="r">95% 구간</th><th class="r">기업-연도</th><th class="r">2024년 기업 수</th></tr></thead><tbody>${gradeRows}
       <tr><td>${chip('판정 불가')} 판정 불가</td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td></td><td class="r">—</td><td class="r">${(dist['판정 불가'] ?? 0).toLocaleString()}</td></tr></tbody></table></div>
       <p class="note">2024년 결산 기준 ${Object.values(dist).reduce((a, b) => a + b, 0).toLocaleString()}개사. 표본 밖 검증의 AUC는 0.826입니다(진입 기업과 진입하지 않은 기업을 하나씩 골랐을 때 진입 기업의 점수가 더 높을 확률).</p></section>
@@ -594,7 +596,7 @@ function renderAbout() {
     </div></section>
     <section class="block"><h2>자료</h2><dl class="grid2">
       <div class="kv"><dt>재무·이자상환</dt><dd>DataGuide 주재무제표(연결 우선, 유동비율·관계사 투자·매입채무 비율은 별도)</dd></div>
-      <div class="kv"><dt>정책금융</dt><dd>사업보고서 주석(차입금·지급보증·약정) 판독, 수혜 인정 기업-기관 3,453쌍(강한 근거가 반복된 쌍은 자동 인정 포함)</dd></div>
+      <div class="kv"><dt>정책금융</dt><dd>사업보고서 주석(차입금·지급보증·약정) 판독, 수혜 인정 기업-기관 3,453쌍(강한 근거가 반복된 쌍은 자동 인정 포함). 중소벤처기업진흥공단은 상장사를 원칙적으로 지원하지 않아 변수에서 뺐습니다(보증형 = 신용보증기금·기술보증기금)</dd></div>
       <div class="kv"><dt>메자닌·지분율</dt><dd>DART 주요사항보고서, 최대주주 현황</dd></div>
       <div class="kv"><dt>상장폐지</dt><dd>한국거래소 상장폐지 목록</dd></div>
       <div class="kv"><dt>요약재무제표</dt><dd>DART 주요계정, 구할 수 없는 해는 DataGuide</dd></div>
@@ -602,7 +604,7 @@ function renderAbout() {
     </dl></section>
     <section class="block"><h2>읽을 때 주의할 점</h2><div class="prose">
       <p>등급은 3년 안 진입 위험의 순서를 매기는 도구이며, 개별 기업의 부실을 확정하지 않습니다. 계수는 함께 나타나는 경향을 뜻할 뿐 원인을 뜻하지 않습니다.</p>
-      <p>재무 상태를 통제하면 정책금융 보유는 진입과 뚜렷한 연관이 없었습니다(세 유형 결합 p = 0.46). 메자닌을 발행한 해에는 재무 상태가 같아도 3년 안 진입 오즈가 약 1.8배 높았습니다. 그래도 표본 밖 예측력은 이자상환 상태와 재무 변수가 대부분을 설명합니다.</p>
+      <p>재무 상태를 통제하면 정책금융 보유는 진입과 뚜렷한 연관이 없었습니다(세 유형 결합 p = 0.53). 메자닌을 발행한 해에는 재무 상태가 같아도 3년 안 진입 오즈가 약 1.8배 높았습니다. 그래도 표본 밖 예측력은 이자상환 상태와 재무 변수가 대부분을 설명합니다.</p>
       <p>정책금융은 받고 있었는지만 관찰했고, 새로 받은 시점과 금액은 반영하지 않았습니다. 등급은 ${S.meta.asof}년 결산 공시로 계산한 추정치입니다. 실제 결과는 ${S.meta.asof_outcome}년 결산까지, 상장 상태는 ${F.date(S.meta.asof_status)} 기준으로 확인했고, 평가 뒤에 상장폐지된 기업은 기업 화면에 따로 알립니다.</p>
     </div></section>
     <section class="block"><h2>만든 곳</h2><p class="lede">광운대학교 참빛설계학기 연구팀, 2026년 11월</p></section>
@@ -701,13 +703,14 @@ function drawHistory(el, f) {
   const X = (y) => (y1 === y0 ? ml + (W - ml - mr) / 2 : ml + (y - y0) * step);
   const Y = (v) => mt + (1 - (v - smin) / (smax - smin)) * PH;
   const cuts = S.meta.cuts.map(scoreOf);
+  const NG = cuts.length + 1;
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${y0}~${y1}년 위험도 점수 추이. 아래 연도별 표에 같은 값이 있습니다.`)}">
     <defs><pattern id="hatchH" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="#fff"/><rect width="1.8" height="5" fill="#9b99b0"/></pattern></defs>`;
-  for (let g = 1; g <= 6; g++) {
+  for (let g = 1; g <= NG; g++) {
     const a = Math.max(g === 1 ? -Infinity : cuts[g - 2], smin);
-    const b = Math.min(g === 6 ? Infinity : cuts[g - 1], smax);
+    const b = Math.min(g === NG ? Infinity : cuts[g - 1], smax);
     if (b <= a) continue;
-    s += `<rect x="${ml}" y="${Y(b)}" width="${W - ml - mr}" height="${Y(a) - Y(b)}" fill="var(--g${g})" fill-opacity="${0.1 + g * 0.025}"/>`;
+    s += `<rect x="${ml}" y="${Y(b)}" width="${W - ml - mr}" height="${Y(a) - Y(b)}" fill="var(--g${g})" fill-opacity="${0.1 + (g / NG) * 0.15}"/>`;
     if (g > 1 && cuts[g - 2] > smin && cuts[g - 2] < smax) s += `<line x1="${ml}" x2="${W - mr}" y1="${Y(cuts[g - 2])}" y2="${Y(cuts[g - 2])}" stroke="#fff" stroke-width="2"/>`;
     if (!narrow && Y(a) - Y(b) >= 15) s += `<text x="${W - mr + 12}" y="${(Y(a) + Y(b)) / 2 + 4}">${g} ${GNAME[g]}</text>`;
   }
