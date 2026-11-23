@@ -867,7 +867,7 @@ function openReport() {
   dlg.setAttribute('aria-labelledby', 'report-title');
   dlg.innerHTML = `<form class="report-form" novalidate>
     <h2 id="report-title">오류 신고</h2>
-    <p class="lede">숫자가 이상하거나 화면이 깨지는 곳을 알려 주세요. 연구팀이 확인합니다.</p>
+    <p class="lede">숫자가 이상하거나 화면이 깨지는 곳을 알려 주세요. 고스트헌터가 확인합니다.</p>
     <fieldset class="kinds"><legend>종류</legend>${KINDS.map((k, i) => `<label><input type="radio" name="kind" value="${k}"${i ? '' : ' checked'}>${k}</label>`).join('')}</fieldset>
     <label class="field"><span>내용</span><textarea name="text" rows="5" maxlength="2000" required placeholder="어느 화면의 무엇이 어떻게 이상한지 적어 주세요."></textarea></label>
     <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -896,7 +896,7 @@ function openReport() {
       const { where, ...ctx } = c;
       const res = await api({ a: 'report', kind: form.kind.value, text, ctx, cid, hp: form.website.value });
       if (res.ok) {
-        form.innerHTML = `<h2 id="report-title">신고가 접수되었습니다</h2><p class="lede">${res.id ? `접수 번호 ${esc(res.id)}. ` : ''}알려 주셔서 고맙습니다. 연구팀이 확인하겠습니다.</p>
+        form.innerHTML = `<h2 id="report-title">신고가 접수되었습니다</h2><p class="lede">${res.id ? `접수 번호 ${esc(res.id)}. ` : ''}알려 주셔서 고맙습니다. 고스트헌터가 확인하겠습니다.</p>
           <div class="actions"><button type="button" class="btn" data-close>닫기</button></div>`;
         form.querySelector('[data-close]').addEventListener('click', () => dlg.close());
         return;
