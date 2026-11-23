@@ -803,7 +803,7 @@ async function renderAdmin(view, seq) {
   document.title = '관리자 | PHANTOM';
   let m;
   try {
-    m = await import('./admin.js');
+    m = await import('./admin.js?v=20261123');
   } catch (e) {
     if (seq === S.seq) app.innerHTML = `<main class="page"><p class="notice">관리자 화면을 불러오지 못했습니다. 새로고침해 주세요.</p></main>`;
     return;
