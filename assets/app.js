@@ -986,7 +986,12 @@ function aiHTML(text, src) {
   return html + (inList ? '</ul>' : '');
 }
 
-const aiText = (ev) => (ev.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
+// Gemini 형식(candidates…)과 Workers AI 예비 형식({response})을 함께 읽는다
+const aiText = (ev) => {
+  const d = ev.choices?.[0]?.delta;
+  if (d) return typeof d.content === 'string' ? d.content : ''; // Workers AI(OpenAI 형식). reasoning_content는 버림
+  return (ev.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
+};
 
 async function aiStream(body, el, src, attempt = 0) {
   let text = '';
