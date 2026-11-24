@@ -92,6 +92,7 @@ a { color: inherit; }
 .ai-msg li { margin: 3px 0; }
 .ai-msg b { font-weight: 650; }
 .ai-wait { color: var(--ink-3); }
+.ai-msg p.ai-made { margin: 12px 0 0; font-size: 12px; color: var(--ink-3); }
 .ai-wait::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: ai-dots 1.2s steps(4) infinite; }
 @keyframes ai-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 .ai-err { margin: 0; color: #a3261b; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

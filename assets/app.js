@@ -1060,11 +1060,11 @@ async function initAI(f) {
   const box = app.querySelector('.ai');
   if (!box) return;
   const code = f.code;
-  let src = new Map();
-  try {
-    const c = await getJSON(`data/ctx/${code}.json`);
-    src = new Map(c.sources.map((s) => [s.id, s]));
-  } catch { /* 근거 링크 없이 진행 */ }
+  let src = new Map(), pre = null;
+  // 근거 링크(ctx)와 미리 만든 개요(data/ai, tools/build_ai.py)를 함께 불러온다. 개요가 근거 자료와 같은 판이면 바로 보여 준다.
+  const [c, a] = await Promise.all([getJSON(`data/ctx/${code}.json`).catch(() => null), getJSON(`data/ai/${code}.json`).catch(() => null)]);
+  if (c) src = new Map(c.sources.map((s) => [s.id, s]));
+  if (a && c && a.ctx_built === c.built && a.dart_fetched === c.dart_fetched) pre = a;
   if (!app.contains(box)) return;
   const chat = S.aiChat.get(code) || { ov: null, turns: [] };
   S.aiChat.set(code, chat);
@@ -1078,8 +1078,11 @@ async function initAI(f) {
     return d.querySelector('.ai-msg');
   };
   for (const t of chat.turns) drawTurn(t.q, t.a);
-  if (chat.ov) { ov.innerHTML = aiHTML(chat.ov, src); ov.removeAttribute('aria-busy'); }
-  else {
+  if (!chat.ov && pre) chat.ov = pre.text;
+  if (chat.ov) {
+    ov.innerHTML = aiHTML(chat.ov, src) + (pre ? `<p class="ai-made">미리 만든 개요 · ${esc(pre.made)} · ${esc(pre.model)}</p>` : '');
+    ov.removeAttribute('aria-busy');
+  } else {
     ov.onretry = (t) => { chat.ov = t; };
     aiStream({ code, mode: 'overview' }, ov, src).then((t) => { if (t) chat.ov = t; });
   }
