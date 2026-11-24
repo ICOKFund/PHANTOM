@@ -994,9 +994,15 @@ async function aiStream(body, el, src, attempt = 0) {
   try {
     const r = await fetch(`${AI_API}/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok || !(r.headers.get('Content-Type') || '').includes('event-stream')) {
-      let m = '';
-      try { m = (await r.json()).message || ''; } catch { /* 본문 없음 */ }
-      throw new Error(m || `AI 서버 응답 오류(${r.status}). 잠시 뒤 다시 시도해 주세요.`);
+      let j = {};
+      try { j = await r.json(); } catch { /* 본문 없음 */ }
+      if (j.error === 'upstream' && j.status >= 500 && attempt < 2) {
+        // 무료 등급 과부하(503)로 시작도 못 하면 잠깐 쉬었다가 자동 재시도(최대 2번)
+        el.innerHTML = '<p class="ai-wait">Gemini가 붐벼 다시 쓰는 중…</p>';
+        await new Promise((ok) => setTimeout(ok, 1500 * (attempt + 1)));
+        return await aiStream({ ...body, retry: attempt + 1 }, el, src, attempt + 1);
+      }
+      throw new Error(j.message || (j.status === 503 ? 'Gemini 서버가 지금 붐빕니다. 잠시 뒤 다시 시도해 주세요.' : `AI 서버 응답 오류(${r.status}). 잠시 뒤 다시 시도해 주세요.`));
     }
     const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = '', queued = false, upstream = null;
@@ -1020,6 +1026,7 @@ async function aiStream(body, el, src, attempt = 0) {
     if (upstream && upstream.code >= 500 && attempt < 2) {
       // 무료 등급 과부하로 스트림이 끊기면 예비 모델로 자동 재시도(최대 2번)
       el.innerHTML = '<p class="ai-wait">Gemini가 붐벼 다시 쓰는 중…</p>';
+      await new Promise((ok) => setTimeout(ok, 1000));
       return await aiStream({ ...body, retry: attempt + 1 }, el, src, attempt + 1);
     }
     if (upstream) {
