@@ -4,13 +4,16 @@
 const app = document.getElementById('app');
 // 오류 신고·공지 저장소(Google Apps Script 웹 앱, apps-script/Code.gs). 비어 있으면 신고 버튼과 공지를 숨긴다.
 const API = 'https://script.google.com/macros/s/AKfycby-yi_wFnmS353NlVlcCkMOzWvNzYjLLzih7q4a-MD-oyh9f3gWRO8dgepgRhtVIvd67A/exec';
-const S = { index: [], byCode: new Map(), meta: null, firms: new Map(), cur: null, lastFirm: null, seq: 0 };
+// AI 리서치 중계 서버(Cloudflare Worker, worker/). 비어 있으면 AI 버튼과 탭을 숨긴다. 로컬 미리보기에서는 wrangler dev(8787).
+const AI_API = location.hostname === 'icokfund.github.io' ? 'https://phantom-ai.recruiting-icok.workers.dev' : 'http://127.0.0.1:8787';
+const S = { ai: false, aiChat: new Map(), index: [], byCode: new Map(), meta: null, firms: new Map(), cur: null, lastFirm: null, seq: 0 };
 const EXAMPLES = ['005710', '243070', '065450', '261200', '001810', '134780'];
 // 위험도 등급 10단계 + D: 이름은 두 등급씩 묶어 붙인다(1 매우 낮음, 2~3 낮음, 4~5 보통, 6~7 주의, 8~9 경계, 10 위험)
 const GRADES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 const GNAME = { 1: '매우 낮음', 2: '낮음', 3: '낮음', 4: '보통', 5: '보통', 6: '주의', 7: '주의', 8: '경계', 9: '경계', 10: '위험', D: '한계기업' };
 const GROUPS = [['1'], ['2', '3'], ['4', '5'], ['6', '7'], ['8', '9'], ['10']];
 const TABS = [['overview', '개요'], ['credit', '위험도 평가표'], ['fin', '요약재무제표'], ['history', '위험도 추이'], ['funding', '자금조달']];
+if (AI_API) TABS.push(['ai', 'AI 리서치']);
 const ICR_STATES = ['무차입', 'ICR 3 이상', 'ICR 1~3', 'ICR<1 1년째', 'ICR<1 2년 연속'];
 const ICR_LABEL = {
   '무차입': '빚이 없어 이자비용 없음',
@@ -115,13 +118,15 @@ function search(q) {
 }
 
 const ICON_SEARCH = '<svg class="search-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>';
+const ICON_AI = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
 const ICON_GO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 
 const searchForm = (id) => `<form class="search" role="search" data-search>
   <div class="search-box">${ICON_SEARCH}
     <input id="${id}" type="search" inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false"
-      placeholder="기업명 또는 종목코드" aria-label="기업명 또는 종목코드로 검색"
+      placeholder="${S.ai ? 'AI에게 물어볼 기업명 또는 종목코드' : '기업명 또는 종목코드'}" aria-label="기업명 또는 종목코드로 검색"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${id}-list">
+    ${AI_API ? `<button class="search-ai" type="button" aria-pressed="${S.ai}" title="기업을 고르면 AI가 등급의 이유를 설명하고 질문에 답합니다">${ICON_AI}<span>AI 리서치</span></button>` : ''}
     <button class="search-go" type="submit" aria-label="검색">${ICON_GO}</button>
   </div>
   <ul class="suggest" id="${id}-list" role="listbox" aria-label="검색 결과" hidden></ul>
@@ -130,6 +135,14 @@ const searchForm = (id) => `<form class="search" role="search" data-search>
 function bindSearch(form) {
   if (!form) return;
   const input = form.querySelector('input');
+  const aiBtn = form.querySelector('.search-ai');
+  if (aiBtn) aiBtn.addEventListener('click', () => {
+    S.ai = !S.ai;
+    try { sessionStorage.setItem('phantom-ai', S.ai ? '1' : ''); } catch { /* 저장 못 해도 동작 */ }
+    for (const b of document.querySelectorAll('.search-ai')) b.setAttribute('aria-pressed', String(S.ai));
+    for (const i of document.querySelectorAll('.search input')) i.placeholder = S.ai ? 'AI에게 물어볼 기업명 또는 종목코드' : '기업명 또는 종목코드';
+    input.focus();
+  });
   const list = form.querySelector('.suggest');
   let items = [];
   let active = -1;
@@ -175,7 +188,7 @@ function bindSearch(form) {
     if (r) openFirm(r.c); else { items = []; draw(); }
   });
 }
-const openFirm = (code) => { location.hash = `#/firm/${code}`; };
+const openFirm = (code) => { location.hash = `#/firm/${code}${S.ai && AI_API ? '/ai' : ''}`; };
 
 // ------------------------------------------------------------------ 공통 틀
 const topBar = (active = '') => `<header class="top"><div class="top-in">
@@ -244,6 +257,7 @@ async function renderFirm(code, tab, seq) {
   drawCharts();
   fitScrollers();
   finishPage();
+  if (tab === 'ai') initAI(f);
   if (S.lastFirm !== code) window.scrollTo(0, 0);
   else {
     const t = app.querySelector('.tabs');
@@ -561,7 +575,7 @@ function fundingTab(f) {
     <p class="note">● 있음, · 없음, – 기록 없음. 연구 결과에서 재무 상태가 같다면 정책금융 보유는 한계기업 진입과 뚜렷한 연관이 없었고(세 유형 결합 p = 0.53), 메자닌을 발행한 해에는 3년 안 진입 오즈가 약 1.8배 높았습니다.</p></section>`;
 }
 
-const RENDER = { overview, credit, fin, history: historyTab, funding: fundingTab };
+const RENDER = { overview, credit, fin, history: historyTab, funding: fundingTab, ai: aiTab };
 
 function renderMissing(code) {
   document.title = 'PHANTOM';
@@ -916,6 +930,169 @@ function debounce(fn, ms) {
   return () => { clearTimeout(t); t = setTimeout(fn, ms); };
 }
 
+// ------------------------------------------------------------------ AI 리서치
+// 기업을 고르면 '왜 이 등급인가' 개요를 쓰고, 질문에 답한다. 자료는 data/ctx/{코드}.json(모형·재무·추이·업종·DART)만 쓰고,
+// 답의 [M]·[D3] 같은 근거 표시는 그 파일의 sources 링크로 바꾼다. 키는 Worker에만 있다.
+function aiTab(f) {
+  const sug = aiSuggestions(f).map((q) => `<button type="button" class="ai-sug">${esc(q)}</button>`).join('');
+  return `<section class="ai" aria-labelledby="ai-h">
+    <div class="ai-top"><h2 id="ai-h">AI 리서치</h2>
+      <p class="ai-lede">Gemini가 PHANTOM 모형·재무·업종 통계·DART 공시 자료만 보고 쓴 설명입니다. 틀릴 수 있으니 문장 끝 근거 표시를 눌러 확인하세요.</p></div>
+    <article class="ai-msg ai-ov" aria-live="polite" aria-busy="true"><p class="ai-wait">등급의 이유를 정리하는 중…</p></article>
+    <div class="ai-thread"></div>
+    <div class="ai-sugs" aria-label="추천 질문">${sug}</div>
+    <form class="ai-ask"><label class="sr" for="ai-q">이 기업에 대해 질문</label>
+      <textarea id="ai-q" rows="2" maxlength="300" placeholder="${esc(f.name)}에 대해 궁금한 점을 물어보세요"></textarea>
+      <button type="submit" class="ai-send">묻기</button></form>
+    <p class="ai-note">질문은 Google Gemini(무료 이용)로 보내지며, 무료 이용 약관에 따라 Google 서비스 개선에 쓰일 수 있습니다. 개인정보는 적지 마세요. AI 답변은 투자 권유가 아닙니다.</p>
+  </section>`;
+}
+
+function aiSuggestions(f) {
+  const e = f.eval, out = [];
+  if (e.grade === 'D') out.push('한계기업으로 판정된 근거는 무엇인가요?');
+  else out.push('위험을 가장 크게 키운 요인은 무엇인가요?');
+  const h = f.history.filter((x) => x.g && x.g !== '판정 불가');
+  const cur = h.find((x) => x.y === e.year), prev = h.find((x) => x.y === e.year - 1);
+  if (cur && prev && cur.g !== prev.g) out.push(`${prev.y}년 ${prev.g}등급에서 ${cur.y}년 ${cur.g}등급으로 바뀐 이유는?`);
+  const recent = f.funding.filter((x) => x.y >= e.year - 3);
+  if (recent.some((x) => x.mezz)) out.push('메자닌(CB·BW) 발행이 등급에 준 영향은?');
+  if (recent.some((x) => x.direct || x.guar || x.ibk)) out.push('정책금융을 받은 것은 위험도에 어떤 의미인가요?');
+  out.push('같은 업종과 비교하면 어떤가요?');
+  out.push('최근 공시 중 눈여겨볼 것은?');
+  return out.slice(0, 5);
+}
+
+// 마크다운 일부(**굵게**, 글머리표)와 근거 표시만 HTML로 바꾼다. 먼저 전부 escape 하므로 답에 든 HTML은 글자로만 나온다.
+function aiHTML(text, src) {
+  const tag = (ids) => ids.split(/[,\s]+/).filter(Boolean).map((id) => {
+    const s = src.get(id);
+    if (!s) return '';
+    const t = esc(`${s.title}${s.date ? ' · ' + s.date : ''}`);
+    const ext = s.url && !s.url.includes('icokfund.github.io');
+    const href = s.url && !ext ? s.url.replace(/^https:\/\/icokfund\.github\.io\/PHANTOM\//, '') : s.url;
+    return s.url ? `<a class="src" href="${esc(href)}"${ext ? ' target="_blank" rel="noopener"' : ''} title="${t}">${esc(id)}</a>`
+      : `<span class="src" title="${t}">${esc(id)}</span>`;
+  }).join('');
+  const inline = (x) => esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\[((?:[A-Z]\d*)(?:\s*,\s*[A-Z]\d*)*)\]/g, (m, ids) => tag(ids));
+  let html = '', inList = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const li = line.match(/^(?:[-*•·]|\d+[.)])\s+(.*)$/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(li[1])}</li>`; continue; }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (line) html += `<p>${inline(line.replace(/^#+\s*/, ''))}</p>`;
+  }
+  return html + (inList ? '</ul>' : '');
+}
+
+const aiText = (ev) => (ev.candidates?.[0]?.content?.parts || []).map((x) => x.text || '').join('');
+
+async function aiStream(body, el, src, attempt = 0) {
+  let text = '';
+  const paint = () => { el.innerHTML = aiHTML(text, src) || '<p class="ai-wait">쓰는 중…</p>'; };
+  try {
+    const r = await fetch(`${AI_API}/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok || !(r.headers.get('Content-Type') || '').includes('event-stream')) {
+      let m = '';
+      try { m = (await r.json()).message || ''; } catch { /* 본문 없음 */ }
+      throw new Error(m || `AI 서버 응답 오류(${r.status}). 잠시 뒤 다시 시도해 주세요.`);
+    }
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '', queued = false, upstream = null;
+    const take = (ln) => {
+      if (!ln.startsWith('data:')) return;
+      let ev;
+      try { ev = JSON.parse(ln.slice(5)); } catch { return; } // 잘린 줄 무시
+      if (ev.error) upstream = ev.error; // Gemini가 스트림 도중 오류(예: 503 과부하)를 보냄
+      else text += aiText(ev);
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      lines.forEach(take);
+      if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; paint(); }); }
+    }
+    take(buf);
+    if (upstream && upstream.code >= 500 && attempt < 2) {
+      // 무료 등급 과부하로 스트림이 끊기면 예비 모델로 자동 재시도(최대 2번)
+      el.innerHTML = '<p class="ai-wait">Gemini가 붐벼 다시 쓰는 중…</p>';
+      return await aiStream({ ...body, retry: attempt + 1 }, el, src, attempt + 1);
+    }
+    if (upstream) {
+      throw new Error(upstream.code === 503 ? 'Gemini 서버가 잠시 붐벼 답이 중간에 끊겼습니다. 다시 시도해 주세요.'
+        : upstream.code === 429 ? '오늘 AI 사용 한도가 찼습니다. 매일 오후 5시(한국 시각)에 다시 열립니다.'
+          : '답을 받는 중 오류가 났습니다. 다시 시도해 주세요.');
+    }
+    if (!text.trim()) throw new Error('AI가 답을 만들지 못했습니다. 다시 시도해 주세요.');
+    paint();
+    return text;
+  } catch (e) {
+    el.innerHTML = `<p class="ai-err" role="alert">${esc(e.message === 'Failed to fetch' ? 'AI 서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.' : e.message)}
+      <button type="button" class="btn-sm ai-retry">다시 시도</button></p>`;
+    el.querySelector('.ai-retry').addEventListener('click', () => {
+      el.setAttribute('aria-busy', 'true');
+      el.innerHTML = '<p class="ai-wait">다시 쓰는 중…</p>';
+      aiStream(body, el, src).then((t) => { if (t && el.onretry) el.onretry(t); });
+    });
+    return null;
+  } finally {
+    el.removeAttribute('aria-busy');
+  }
+}
+
+async function initAI(f) {
+  const box = app.querySelector('.ai');
+  if (!box) return;
+  const code = f.code;
+  let src = new Map();
+  try {
+    const c = await getJSON(`data/ctx/${code}.json`);
+    src = new Map(c.sources.map((s) => [s.id, s]));
+  } catch { /* 근거 링크 없이 진행 */ }
+  if (!app.contains(box)) return;
+  const chat = S.aiChat.get(code) || { ov: null, turns: [] };
+  S.aiChat.set(code, chat);
+  const ov = box.querySelector('.ai-ov');
+  const thread = box.querySelector('.ai-thread');
+  const drawTurn = (q, a) => {
+    const d = document.createElement('div');
+    d.className = 'ai-turn';
+    d.innerHTML = `<p class="ai-q">${esc(q)}</p><article class="ai-msg" aria-live="polite" aria-busy="${a == null}">${a == null ? '<p class="ai-wait">답을 쓰는 중…</p>' : aiHTML(a, src)}</article>`;
+    thread.appendChild(d);
+    return d.querySelector('.ai-msg');
+  };
+  for (const t of chat.turns) drawTurn(t.q, t.a);
+  if (chat.ov) { ov.innerHTML = aiHTML(chat.ov, src); ov.removeAttribute('aria-busy'); }
+  else {
+    ov.onretry = (t) => { chat.ov = t; };
+    aiStream({ code, mode: 'overview' }, ov, src).then((t) => { if (t) chat.ov = t; });
+  }
+
+  const form = box.querySelector('.ai-ask');
+  const ta = form.querySelector('textarea');
+  const btn = form.querySelector('button');
+  let busy = false;
+  const ask = async (q) => {
+    q = q.trim();
+    if (!q || busy) return;
+    busy = true; btn.disabled = true; ta.value = '';
+    const el = drawTurn(q, null);
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const history = chat.turns.slice(-2).flatMap((t) => [{ role: 'user', text: t.q }, { role: 'model', text: t.a }]);
+    el.onretry = (t) => { chat.turns.push({ q, a: t }); };
+    const a = await aiStream({ code, q, history }, el, src);
+    if (a) chat.turns.push({ q, a });
+    busy = false; btn.disabled = false;
+  };
+  form.addEventListener('submit', (e) => { e.preventDefault(); ask(ta.value); });
+  ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(ta.value); } });
+  box.querySelectorAll('.ai-sug').forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
+}
+
 async function boot() {
   try {
     const [index, meta] = await Promise.all([getJSON('data/index.json'), getJSON('data/meta.json')]);
@@ -930,6 +1107,7 @@ async function boot() {
     app.innerHTML = `<main class="page"><p class="notice">자료를 불러오지 못했습니다. 잠시 뒤 새로고침해 주세요. (${esc(e.message)})</p></main>`;
     return;
   }
+  try { S.ai = !!AI_API && sessionStorage.getItem('phantom-ai') === '1'; } catch { /* 기본값 끔 */ }
   window.addEventListener('hashchange', route);
   let lastW = window.innerWidth;
   window.addEventListener('resize', debounce(() => { if (window.innerWidth !== lastW) { lastW = window.innerWidth; drawCharts(); fitScrollers(); } }, 150));

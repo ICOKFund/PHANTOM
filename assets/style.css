@@ -70,6 +70,51 @@ a { color: inherit; }
   display: grid; place-items: center; background: var(--ink); color: #fff;
 }
 .search-go:hover { background: var(--a5); }
+/* AI 리서치 켜기·끄기(검색창 안, → 버튼 왼쪽) */
+.search-ai {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px 0 11px;
+  border: 1px solid var(--rule-strong); border-radius: 18px; background: #fff; color: var(--ink-2);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.search-ai:hover { border-color: var(--a4); color: var(--a5); }
+.search-ai[aria-pressed="true"] { background: var(--a5); border-color: var(--a5); color: #fff; }
+.top .search-ai { height: 30px; padding: 0 10px 0 8px; font-size: 13px; }
+@media (max-width: 520px) { .search-ai span { display: none; } .search-ai { padding: 0 10px; } }
+
+/* AI 리서치 탭 */
+.ai { max-width: 760px; padding-top: 28px; }
+.ai-top h2 { margin: 0 0 6px; font-size: 20px; }
+.ai-lede, .ai-note { margin: 0; font-size: 13.5px; color: var(--ink-3); }
+.ai-msg { margin-top: 18px; padding: 20px 22px; border: 1px solid var(--rule); border-radius: 14px; background: var(--wash); line-height: 1.75; }
+.ai-msg p { margin: 0 0 10px; }
+.ai-msg p:last-child, .ai-msg ul:last-child { margin-bottom: 0; }
+.ai-msg ul { margin: 0 0 12px; padding-left: 1.2em; }
+.ai-msg li { margin: 3px 0; }
+.ai-msg b { font-weight: 650; }
+.ai-wait { color: var(--ink-3); }
+.ai-wait::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: ai-dots 1.2s steps(4) infinite; }
+@keyframes ai-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.ai-err { margin: 0; color: #a3261b; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.src {
+  display: inline-block; min-width: 1.6em; margin: 0 1px; padding: 0 5px; border-radius: 6px; vertical-align: 1px;
+  background: #fff; border: 1px solid var(--rule-strong); color: var(--a5); font-size: 11.5px; font-weight: 600; line-height: 1.6;
+  text-align: center; text-decoration: none;
+}
+a.src:hover { border-color: var(--a4); background: var(--a5); color: #fff; }
+.ai-turn { margin-top: 26px; }
+.ai-q { margin: 0 0 0 auto; width: fit-content; max-width: 85%; padding: 10px 16px; border-radius: 14px 14px 4px 14px; background: var(--ink); color: #fff; }
+.ai-turn .ai-msg { margin-top: 10px; background: #fff; }
+.ai-sugs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.ai-sug { font: inherit; font-size: 14px; padding: 7px 14px; border: 1px solid var(--rule-strong); border-radius: 999px; background: #fff; color: var(--ink-2); cursor: pointer; text-align: left; }
+.ai-sug:hover { border-color: var(--a4); color: var(--a5); }
+.ai-ask { display: flex; gap: 8px; align-items: flex-end; margin-top: 14px; padding: 8px 8px 8px 16px; border: 1px solid var(--rule-strong); border-radius: 16px; background: #fff; }
+.ai-ask:focus-within { border-color: var(--a4); box-shadow: 0 0 0 4px rgba(99, 73, 193, .12); }
+.ai-ask textarea { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; font: inherit; font-size: 15.5px; line-height: 1.5; padding: 6px 0; background: transparent; }
+.ai-send { flex: none; height: 40px; padding: 0 18px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.ai-send:hover { background: var(--a5); }
+.ai-send:disabled { opacity: .45; cursor: default; }
+.ai-note { margin-top: 10px; font-size: 12.5px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .suggest {
   position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 40;
   margin: 0; padding: 6px; list-style: none; background: #fff;
@@ -398,6 +443,7 @@ dialog.report::backdrop { background: rgba(27, 25, 48, .36); }
 @media (prefers-reduced-motion: reduce) {
   .wordmark span { animation: none; }
   .search-box { transition: none; }
+  .ai-wait::after { animation: none; content: "…"; }
 }
 @media print {
   .top, .tabs, .search { display: none; }
