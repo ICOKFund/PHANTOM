@@ -936,16 +936,13 @@ function debounce(fn, ms) {
 function aiTab(f) {
   const sug = aiSuggestions(f).map((q) => `<button type="button" class="ai-sug">${esc(q)}</button>`).join('');
   return `<section class="ai" aria-labelledby="ai-h">
-    <div class="ai-top"><h2 id="ai-h">AI 리서치</h2>
-      <p class="ai-lede">Gemini가 PHANTOM 모형·재무·업종 통계·DART 공시 자료만 보고 쓴 설명입니다. 틀릴 수 있으니 문장 끝 근거 표시를 눌러 확인하세요.</p></div>
+    <div class="ai-top"><h2 id="ai-h">AI 리서치</h2></div>
     <article class="ai-msg ai-ov" aria-live="polite" aria-busy="true"><p class="ai-wait">등급의 이유를 정리하는 중…</p></article>
     <div class="ai-thread"></div>
     <div class="ai-sugs" aria-label="추천 질문">${sug}</div>
     <form class="ai-ask"><label class="sr" for="ai-q">이 기업에 대해 질문</label>
       <textarea id="ai-q" rows="2" maxlength="300" placeholder="${esc(f.name)}에 대해 궁금한 점을 물어보세요"></textarea>
-      <button type="submit" class="ai-send">묻기</button></form>
-    <p class="ai-note">질문은 Google Gemini(무료 이용)로 보내지며, 무료 이용 약관에 따라 Google 서비스 개선에 쓰일 수 있습니다. 개인정보는 적지 마세요. AI 답변은 투자 권유가 아닙니다.</p>
-  </section>`;
+      <button type="submit" class="ai-send">묻기</button></form>  </section>`;
 }
 
 function aiSuggestions(f) {
@@ -1060,6 +1057,7 @@ async function initAI(f) {
   const box = app.querySelector('.ai');
   if (!box) return;
   const code = f.code;
+  const t0 = performance.now();
   let src = new Map(), pre = null;
   // 근거 링크(ctx)와 미리 만든 개요(data/ai, tools/build_ai.py)를 함께 불러온다. 개요가 근거 자료와 같은 판이면 바로 보여 준다.
   const [c, a] = await Promise.all([getJSON(`data/ctx/${code}.json`).catch(() => null), getJSON(`data/ai/${code}.json`).catch(() => null)]);
@@ -1080,7 +1078,13 @@ async function initAI(f) {
   for (const t of chat.turns) drawTurn(t.q, t.a);
   if (!chat.ov && pre) chat.ov = pre.text;
   if (chat.ov) {
-    ov.innerHTML = aiHTML(chat.ov, src) + (pre ? `<p class="ai-made">미리 만든 개요 · ${esc(pre.made)} · ${esc(pre.model)}</p>` : '');
+    // 미리 만든 개요도 처음 열 때는 2초쯤 '정리하는 중'을 보여 준 뒤 띄운다.
+    if (!chat.seen) {
+      await new Promise((r) => setTimeout(r, Math.max(0, 2000 - (performance.now() - t0))));
+      chat.seen = true;
+      if (!app.contains(box)) return;
+    }
+    ov.innerHTML = aiHTML(chat.ov, src);
     ov.removeAttribute('aria-busy');
   } else {
     ov.onretry = (t) => { chat.ov = t; };
